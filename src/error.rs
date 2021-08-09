@@ -31,6 +31,8 @@ pub enum Error {
     Database(#[from] mongodb::error::Error),
     #[error("Envy error: {0}")]
     Envy(#[from] envy::Error),
+    #[error("reqwest error: {0}")]
+    Http(#[from] reqwest::Error),
 }
 
 impl warp::reject::Reject for Error {}
@@ -68,6 +70,10 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> 
             Error::Service(e) => e.error_response(),
             Error::Database(e) => {
                 error!("database error: {:?}", e);
+                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+            }
+            Error::Http(e) => {
+                error!("http client error: {:?}", e);
                 Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
             }
             Error::Envy(_) => unreachable!(),

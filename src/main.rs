@@ -2,6 +2,7 @@ mod authentication;
 mod client;
 mod database;
 mod error;
+mod mailer;
 mod model;
 mod service;
 mod session;
