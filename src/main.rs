@@ -87,12 +87,15 @@ async fn main() -> Result<()> {
     let service_filter = service::filters(db.clone(), token_config.clone(), aead.clone());
     let token_filter = token::filters(db, token_config, aead);
 
-    let routes = warp::path("user")
+    let svc_routes = warp::path("user")
         .and(user_filter)
         .or(warp::path("client").and(client_filter))
         .or(warp::path("session").and(session_filter))
         .or(warp::path("service").and(service_filter))
-        .or(warp::path("token").and(token_filter))
+        .or(warp::path("token").and(token_filter));
+
+    let routes = warp::path("v1")
+        .and(svc_routes)
         .recover(error::handle_rejection);
 
     warp::serve(routes)
