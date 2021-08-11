@@ -1,8 +1,8 @@
 use std::convert::Infallible;
 
 use crate::{
-    authentication::AuthenticationError, client::ClientError, model::Status, service::ServiceError,
-    session::SessionError, user::UserError,
+    action::ActionError, authentication::AuthenticationError, client::ClientError, model::Status,
+    service::ServiceError, session::SessionError, user::UserError,
 };
 
 use log::error;
@@ -28,9 +28,13 @@ pub enum Error {
     #[error("session error: {0}")]
     Session(#[from] SessionError),
     #[error("MongoDB error: {0}")]
+    Action(#[from] ActionError),
+    #[error("action error: {0}")]
     Database(#[from] mongodb::error::Error),
     #[error("Envy error: {0}")]
     Envy(#[from] envy::Error),
+    #[error("reqwest error: {0}")]
+    Http(#[from] reqwest::Error),
 }
 
 impl warp::reject::Reject for Error {}
@@ -66,8 +70,13 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> 
             Error::Client(e) => e.error_response(),
             Error::Session(e) => e.error_response(),
             Error::Service(e) => e.error_response(),
+            Error::Action(e) => e.error_response(),
             Error::Database(e) => {
                 error!("database error: {:?}", e);
+                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+            }
+            Error::Http(e) => {
+                error!("http client error: {:?}", e);
                 Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
             }
             Error::Envy(_) => unreachable!(),

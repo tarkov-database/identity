@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::{error::Error, Result};
 
 use super::AuthenticationError;
 
@@ -7,8 +7,9 @@ use std::convert::Infallible;
 use jsonwebtoken::{
     decode,
     errors::{Error as JwtError, ErrorKind},
-    DecodingKey, EncodingKey, Validation,
+    DecodingKey, EncodingKey, TokenData, Validation,
 };
+use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 #[derive(Debug, thiserror::Error)]
@@ -69,6 +70,7 @@ pub fn with_config(
     warp::any().map(move || config.clone())
 }
 
+/// With authorization header
 pub fn with_auth<T>(config: TokenConfig) -> impl Filter<Extract = (T,), Error = Rejection> + Clone
 where
     T: serde::de::DeserializeOwned,
@@ -93,10 +95,47 @@ where
         .into());
     };
 
-    let data = match decode(token, &config.dec_key, &config.validation) {
-        Ok(d) => d,
-        Err(e) => return Err(Error::from(AuthenticationError::from(TokenError::from(e))).into()),
-    };
+    let data = decode_token(token, config)?;
 
     Ok(data.claims)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenQuery {
+    token: String,
+}
+
+/// With query string token
+pub fn with_token<T>(config: TokenConfig) -> impl Filter<Extract = (T,), Error = Rejection> + Clone
+where
+    T: serde::de::DeserializeOwned,
+{
+    warp::query::<TokenQuery>()
+        .map(move |query: TokenQuery| (query.token, config.clone()))
+        .and_then(token_handler)
+}
+
+async fn token_handler<T>(
+    (token, config): (String, TokenConfig),
+) -> std::result::Result<T, Rejection>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let data = decode_token(&token, config)?;
+
+    Ok(data.claims)
+}
+
+#[inline]
+pub fn decode_token<T>(token: &str, config: TokenConfig) -> Result<TokenData<T>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let data = match decode::<T>(token, &config.dec_key, &config.validation) {
+        Ok(d) => d,
+        Err(e) => return Err(AuthenticationError::from(TokenError::from(e)).into()),
+    };
+
+    Ok(data)
 }

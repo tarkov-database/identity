@@ -1,7 +1,9 @@
+mod action;
 mod authentication;
 mod client;
 mod database;
 mod error;
+mod mail;
 mod model;
 mod service;
 mod session;
@@ -51,6 +53,12 @@ struct AppConfig {
     mongo_cert: Option<PathBuf>,
     mongo_key: Option<PathBuf>,
 
+    // Email client
+    mail_from: String,
+    mg_region: mail::Region,
+    mg_domain: String,
+    mg_key: String,
+
     // JWT
     jwt_secret: String,
     jwt_audience: Vec<String>,
@@ -80,19 +88,27 @@ async fn main() -> Result<()> {
     let token_config =
         TokenConfig::from_secret(app_config.jwt_secret.as_bytes(), app_config.jwt_audience);
     let aead = Aead256::new(app_config.crypto_key).unwrap();
+    let mail = mail::Client::new(
+        app_config.mg_key,
+        app_config.mg_region,
+        app_config.mg_domain,
+        app_config.mail_from,
+    )?;
 
-    let user_filter = user::filters(db.clone(), token_config.clone());
+    let user_filter = user::filters(db.clone(), token_config.clone(), mail);
     let client_filter = client::filters(db.clone(), token_config.clone());
     let session_filter = session::filters(db.clone(), token_config.clone());
     let service_filter = service::filters(db.clone(), token_config.clone(), aead.clone());
-    let token_filter = token::filters(db, token_config, aead);
+    let token_filter = token::filters(db.clone(), token_config.clone(), aead);
+    let action_filter = action::filters(db, token_config);
 
     let svc_routes = warp::path("user")
         .and(user_filter)
         .or(warp::path("client").and(client_filter))
         .or(warp::path("session").and(session_filter))
         .or(warp::path("service").and(service_filter))
-        .or(warp::path("token").and(token_filter));
+        .or(warp::path("token").and(token_filter))
+        .or(warp::path("action").and(action_filter));
 
     let routes = warp::path("v1")
         .and(svc_routes)

@@ -129,7 +129,7 @@ impl Database {
         Ok(())
     }
 
-    async fn update_user(&self, id: ObjectId, update: Document) -> Result<UserDocument> {
+    pub async fn update_user(&self, id: ObjectId, update: Document) -> Result<UserDocument> {
         let doc = doc! {
             "$currentDate": { "lastModified": true },
             "$set": update,
