@@ -1,6 +1,7 @@
 use crate::{
-    authentication::token::{with_auth, TokenConfig},
+    authentication::token::{with_auth, with_config, TokenConfig},
     database::{with_db, Database},
+    mail::{self, with_mail},
     model,
     session::SessionClaims,
 };
@@ -13,11 +14,12 @@ use warp::Filter;
 pub fn filters(
     db: Database,
     config: TokenConfig,
+    mail: mail::Client,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     list(db.clone(), config.clone())
         .or(get(db.clone(), config.clone()))
-        .or(create(db.clone(), config.clone()))
-        .or(update(db.clone(), config.clone()))
+        .or(create(db.clone(), config.clone(), mail.clone()))
+        .or(update(db.clone(), config.clone(), mail))
         .or(delete(db, config))
 }
 
@@ -51,12 +53,14 @@ fn get(
 fn create(
     db: Database,
     config: TokenConfig,
+    mail: mail::Client,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     warp::path::end()
         .and(warp::post())
-        .and(with_auth::<SessionClaims>(config))
         .and(warp::body::content_length_limit(1024 * 16).and(warp::body::json()))
         .and(with_db(db))
+        .and(with_mail(mail))
+        .and(with_config(config))
         .and_then(handler::create)
 }
 
@@ -64,12 +68,15 @@ fn create(
 fn update(
     db: Database,
     config: TokenConfig,
+    mail: mail::Client,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     warp::path::param::<String>()
         .and(warp::patch())
-        .and(with_auth::<SessionClaims>(config))
+        .and(with_auth::<SessionClaims>(config.clone()))
         .and(warp::body::content_length_limit(1024 * 16).and(warp::body::json()))
         .and(with_db(db))
+        .and(with_mail(mail))
+        .and(with_config(config))
         .and_then(handler::update)
 }
 

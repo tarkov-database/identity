@@ -1,10 +1,13 @@
 use crate::{
+    action::send_verification_request,
     authentication::{
         password::{self, PasswordError},
+        token::TokenConfig,
         AuthenticationError,
     },
     database::Database,
     error::{Error, QueryError},
+    mail,
     model::{List, ListOptions, Status},
     session::{self, SessionClaims},
 };
@@ -98,22 +101,15 @@ pub struct CreateRequest {
     email: String,
     password: String,
     #[serde(default)]
-    verified: bool,
-    #[serde(default)]
-    can_login: bool,
-    #[serde(default)]
     roles: Vec<Role>,
 }
 
 pub async fn create(
-    claims: SessionClaims,
     body: CreateRequest,
     db: Database,
+    mail: mail::Client,
+    config: TokenConfig,
 ) -> std::result::Result<reply::Response, Rejection> {
-    if !claims.scope.contains(&session::Scope::UserWrite) {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
-    }
-
     if db.get_user(doc! { "email": &body.email }).await.is_ok() {
         return Err(Error::from(UserError::AlreadyExists).into());
     }
@@ -125,13 +121,15 @@ pub async fn create(
         email: body.email,
         password: password_hash,
         roles: body.roles,
-        verified: body.verified,
-        can_login: body.can_login,
+        verified: false,
+        can_login: true,
         last_session: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
         last_modified: Utc::now(),
     };
 
     db.insert_user(&user).await?;
+
+    send_verification_request(&user.email, &user.id.to_hex(), mail, config).await?;
 
     Ok(
         reply::with_status(reply::json(&UserResponse::from(user)), StatusCode::CREATED)
@@ -153,6 +151,8 @@ pub async fn update(
     claims: SessionClaims,
     body: UpdateRequest,
     db: Database,
+    mail: mail::Client,
+    config: TokenConfig,
 ) -> std::result::Result<reply::Response, Rejection> {
     if !claims.scope.contains(&session::Scope::UserWrite) && claims.sub != id {
         return Err(Error::from(AuthenticationError::InsufficientPermission).into());
@@ -165,6 +165,8 @@ pub async fn update(
 
     let mut doc = Document::new();
     if let Some(v) = body.email {
+        send_verification_request(&v, &id.to_hex(), mail, config).await?;
+        doc.insert("verified", false);
         doc.insert("email", v);
     }
     if let Some(v) = body.password {
