@@ -7,7 +7,7 @@ use super::{handler, ActionClaims};
 
 use warp::Filter;
 
-/// User filters combined.
+/// Action filters combined.
 pub fn filters(
     db: Database,
     config: TokenConfig,
