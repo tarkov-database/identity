@@ -1,9 +1,14 @@
+use crate::Result;
+
+use super::AuthenticationError;
+
 use argon2::{
     password_hash::{
         PasswordHash, PasswordHasher, PasswordVerifier, Result as A2Result, SaltString,
     },
     Argon2, Version,
 };
+use log::error;
 use passwords::{analyzer, scorer};
 use rand::rngs::OsRng;
 
@@ -48,7 +53,7 @@ where
     Ok(())
 }
 
-pub fn validate_password(password: &str) -> Result<(), PasswordError> {
+pub fn validate_password(password: &str) -> std::result::Result<(), PasswordError> {
     if !password.is_ascii() {
         return Err(PasswordError::InvalidPassword(
             "password has invalid characters".to_string(),
@@ -93,4 +98,23 @@ pub fn validate_password(password: &str) -> Result<(), PasswordError> {
     }
 
     Ok(())
+}
+
+pub fn validate_and_hash(password: &str) -> Result<String> {
+    if let Err(e) = validate_password(password) {
+        return Err(AuthenticationError::from(e).into());
+    }
+
+    let hash = match hash_password(password) {
+        Ok(h) => h,
+        Err(e) => {
+            error!("Error while hashing password: {:?}", e);
+            return Err(AuthenticationError::from(PasswordError::InvalidPassword(
+                "bad input".to_string(),
+            ))
+            .into());
+        }
+    };
+
+    Ok(hash)
 }

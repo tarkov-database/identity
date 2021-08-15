@@ -1,10 +1,6 @@
 use crate::{
-    action::send_verification_request,
-    authentication::{
-        password::{self, PasswordError},
-        token::TokenConfig,
-        AuthenticationError,
-    },
+    action::send_verification_mail,
+    authentication::{password, token::TokenConfig, AuthenticationError},
     database::Database,
     error::{Error, QueryError},
     mail,
@@ -15,7 +11,6 @@ use crate::{
 use super::{Role, UserDocument, UserError};
 
 use chrono::{serde::ts_seconds, DateTime, NaiveDateTime, Utc};
-use log::error;
 use mongodb::bson::{doc, oid::ObjectId, to_bson, to_document, Document};
 use serde::{Deserialize, Serialize};
 use warp::{http::StatusCode, reply, Rejection, Reply};
@@ -114,7 +109,7 @@ pub async fn create(
         return Err(Error::from(UserError::AlreadyExists).into());
     }
 
-    let password_hash = process_password(&body.password)?;
+    let password_hash = password::validate_and_hash(&body.password)?;
 
     let user = UserDocument {
         id: ObjectId::new(),
@@ -129,7 +124,7 @@ pub async fn create(
 
     db.insert_user(&user).await?;
 
-    send_verification_request(&user.email, &user.id.to_hex(), mail, config).await?;
+    send_verification_mail(&user.email, &user.id.to_hex(), mail, config).await?;
 
     Ok(
         reply::with_status(reply::json(&UserResponse::from(user)), StatusCode::CREATED)
@@ -165,12 +160,12 @@ pub async fn update(
 
     let mut doc = Document::new();
     if let Some(v) = body.email {
-        send_verification_request(&v, &id.to_hex(), mail, config).await?;
+        send_verification_mail(&v, &id.to_hex(), mail, config).await?;
         doc.insert("verified", false);
         doc.insert("email", v);
     }
     if let Some(v) = body.password {
-        let hash = process_password(&v)?;
+        let hash = password::validate_and_hash(&v)?;
         doc.insert("password", hash);
     }
 
@@ -209,24 +204,4 @@ pub async fn delete(
     db.delete_user(id).await?;
 
     Ok(Status::new(StatusCode::OK, "user deleted").into())
-}
-
-fn process_password(password: &str) -> std::result::Result<String, Rejection> {
-    if let Err(e) = password::validate_password(password) {
-        return Err(Error::from(AuthenticationError::from(e)).into());
-    }
-
-    let password_hash =
-        match password::hash_password(password) {
-            Ok(h) => h,
-            Err(e) => {
-                error!("Error while hashing password: {:?}", e);
-                return Err(Error::from(AuthenticationError::from(
-                    PasswordError::InvalidPassword("bad input".to_string()),
-                ))
-                .into());
-            }
-        };
-
-    Ok(password_hash)
 }

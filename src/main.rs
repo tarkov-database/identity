@@ -95,12 +95,12 @@ async fn main() -> Result<()> {
         app_config.mail_from,
     )?;
 
-    let user_filter = user::filters(db.clone(), token_config.clone(), mail);
+    let user_filter = user::filters(db.clone(), token_config.clone(), mail.clone());
     let client_filter = client::filters(db.clone(), token_config.clone());
     let session_filter = session::filters(db.clone(), token_config.clone());
     let service_filter = service::filters(db.clone(), token_config.clone(), aead.clone());
     let token_filter = token::filters(db.clone(), token_config.clone(), aead);
-    let action_filter = action::filters(db, token_config);
+    let action_filter = action::filters(db, token_config, mail);
 
     let svc_routes = warp::path("user")
         .and(user_filter)
