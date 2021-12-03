@@ -6,7 +6,7 @@ use argon2::{
     password_hash::{
         PasswordHash, PasswordHasher, PasswordVerifier, Result as A2Result, SaltString,
     },
-    Argon2, Version,
+    Algorithm, Argon2, Params, Version,
 };
 use log::error;
 use passwords::{analyzer, scorer};
@@ -15,11 +15,12 @@ use rand::rngs::OsRng;
 /// Minimum password score
 const SCORE_MIN: f64 = 85.0;
 
-// Argon2 parameters
+// Argon2 config
+const ALGO: Algorithm = Algorithm::Argon2id;
+const VERSION: Version = Version::V0x13;
 const M_COST: u32 = 4 << 10;
 const T_COST: u32 = 3;
 const P_COST: u32 = 2;
-const VERSION: Version = Version::V0x13;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PasswordError {
@@ -32,9 +33,11 @@ pub enum PasswordError {
 pub fn hash_password<S: AsRef<[u8]>>(password: S) -> A2Result<String> {
     let salt = SaltString::generate(&mut OsRng);
 
-    let argon2 = Argon2::new(None, T_COST, M_COST, P_COST, VERSION).unwrap();
+    let params = Params::new(M_COST, T_COST, P_COST, None)?;
 
-    let hash = argon2.hash_password_simple(password.as_ref(), salt.as_ref())?;
+    let argon2 = Argon2::new(ALGO, VERSION, params);
+
+    let hash = argon2.hash_password(password.as_ref(), salt.as_ref())?;
 
     Ok(hash.to_string())
 }
@@ -44,7 +47,9 @@ where
     S: AsRef<[u8]>,
     H: AsRef<str>,
 {
-    let argon2 = Argon2::new(None, T_COST, M_COST, P_COST, VERSION).unwrap();
+    let params = Params::new(M_COST, T_COST, P_COST, None)?;
+
+    let argon2 = Argon2::new(ALGO, VERSION, params);
 
     let parsed_hash = PasswordHash::new(hash.as_ref())?;
 
