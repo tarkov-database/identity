@@ -2,7 +2,6 @@ use crate::{
     action::{send_reset_mail, ActionType},
     authentication::{password, token::TokenConfig},
     database::Database,
-    error::Error,
     mail,
     model::Status,
 };
@@ -22,13 +21,13 @@ pub async fn verify_email(
     Extension(db): Extension<Database>,
 ) -> crate::Result<Status> {
     if claims.r#type != ActionType::Verify {
-        return Err(Error::from(ActionError::Invalid).into());
+        return Err(ActionError::Invalid.into());
     }
 
     let addr = if let Some(v) = claims.email {
         v
     } else {
-        return Err(Error::from(ActionError::Invalid).into());
+        return Err(ActionError::Invalid.into());
     };
 
     let user_id = ObjectId::parse_str(claims.sub).unwrap();
@@ -36,10 +35,10 @@ pub async fn verify_email(
     let user = db.get_user(doc! {"_id": user_id }).await?;
 
     if user.email != addr {
-        return Err(Error::from(ActionError::Invalid).into());
+        return Err(ActionError::Invalid.into());
     }
     if user.verified {
-        return Err(Error::from(ActionError::AlreadyVerified).into());
+        return Err(ActionError::AlreadyVerified.into());
     }
 
     db.update_user(user_id, doc! { "verified": true }).await?;
