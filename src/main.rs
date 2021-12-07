@@ -22,15 +22,17 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use axum::error_handling::HandleErrorLayer;
-use axum::{Router, Server};
+use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::AUTHORIZATION;
 use mongodb::options::ClientOptions;
 use serde::Deserialize;
 use tower::ServiceBuilder;
-use tower_http::add_extension::AddExtensionLayer;
-use tower_http::sensitive_headers::SetSensitiveHeadersLayer;
-use tower_http::trace::TraceLayer;
+use tower_http::{
+    add_extension::AddExtensionLayer,
+    sensitive_headers::SetSensitiveHeadersLayer,
+    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    LatencyUnit,
+};
 
 #[cfg(feature = "jemalloc")]
 #[global_allocator]
@@ -109,7 +111,15 @@ async fn main() -> Result<()> {
         .load_shed()
         .concurrency_limit(1024)
         .timeout(Duration::from_secs(60))
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().include_headers(true))
+                .on_response(
+                    DefaultOnResponse::new()
+                        .include_headers(true)
+                        .latency_unit(LatencyUnit::Micros),
+                ),
+        )
         .layer(AddExtensionLayer::new(db))
         .layer(AddExtensionLayer::new(token_config))
         .layer(AddExtensionLayer::new(aead))
