@@ -4,7 +4,7 @@ use crate::{
     database::Database,
     error::QueryError,
     mail,
-    model::{List, ListOptions, Status},
+    model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
 };
 
@@ -58,7 +58,7 @@ pub async fn list(
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
     Extension(db): Extension<Database>,
-) -> crate::Result<(StatusCode, Json<List<UserResponse>>)> {
+) -> crate::Result<Response<List<UserResponse>>> {
     let filter = if !claims.scope.contains(&session::Scope::UserRead) {
         doc! { "_id": ObjectId::parse_str(&claims.sub).unwrap() }
     } else {
@@ -69,14 +69,14 @@ pub async fn list(
 
     let list = List::new(total, users);
 
-    Ok((StatusCode::OK, Json(list)))
+    Ok(Response::new(list))
 }
 
 pub async fn get_by_id(
     Path(id): Path<String>,
     claims: SessionClaims,
     Extension(db): Extension<Database>,
-) -> crate::Result<(StatusCode, Json<UserResponse>)> {
+) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserRead) && claims.sub != id {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
@@ -88,7 +88,7 @@ pub async fn get_by_id(
 
     let user = db.get_user(doc! { "_id": id }).await?;
 
-    Ok((StatusCode::OK, Json(user.into())))
+    Ok(Response::new(user.into()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -105,7 +105,7 @@ pub async fn create(
     Extension(db): Extension<Database>,
     Extension(mail): Extension<mail::Client>,
     Extension(config): Extension<TokenConfig>,
-) -> crate::Result<(StatusCode, Json<UserResponse>)> {
+) -> crate::Result<Response<UserResponse>> {
     if db.get_user(doc! { "email": &body.email }).await.is_ok() {
         return Err(UserError::AlreadyExists.into());
     }
@@ -127,7 +127,7 @@ pub async fn create(
 
     send_verification_mail(&user.email, &user.id.to_hex(), mail, config).await?;
 
-    Ok((StatusCode::CREATED, Json(user.into())))
+    Ok(Response::with_status(StatusCode::CREATED, user.into()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -146,7 +146,7 @@ pub async fn update(
     Extension(db): Extension<Database>,
     Extension(mail): Extension<mail::Client>,
     Extension(config): Extension<TokenConfig>,
-) -> crate::Result<(StatusCode, Json<UserResponse>)> {
+) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserWrite) && claims.sub != id {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
@@ -182,7 +182,7 @@ pub async fn update(
 
     let doc = db.update_user(id, doc).await?;
 
-    Ok((StatusCode::OK, Json(doc.into())))
+    Ok(Response::new(doc.into()))
 }
 
 pub async fn delete(

@@ -2,7 +2,7 @@ use crate::{
     authentication::AuthenticationError,
     database::Database,
     error::QueryError,
-    model::{List, ListOptions, Status},
+    model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
     user::UserError,
 };
@@ -64,7 +64,7 @@ pub async fn list(
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
     Extension(db): Extension<Database>,
-) -> crate::Result<(StatusCode, Json<List<ClientResponse>>)> {
+) -> crate::Result<Response<List<ClientResponse>>> {
     let user = if !claims.scope.contains(&session::Scope::ClientRead) {
         Some(&claims.sub)
     } else {
@@ -82,14 +82,14 @@ pub async fn list(
     let (clients, total) = db.get_clients(f, opts).await?;
     let list = List::new(total, clients);
 
-    Ok((StatusCode::OK, Json(list)))
+    Ok(Response::new(list))
 }
 
 pub async fn get_by_id(
     Path(id): Path<String>,
     claims: SessionClaims,
     Extension(db): Extension<Database>,
-) -> crate::Result<(StatusCode, Json<ClientResponse>)> {
+) -> crate::Result<Response<ClientResponse>> {
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
         Err(_) => return Err(ClientError::InvalidId.into()),
@@ -103,7 +103,7 @@ pub async fn get_by_id(
 
     let client = db.get_client(filter).await?;
 
-    Ok((StatusCode::OK, Json(ClientResponse::from(client))))
+    Ok(Response::with_status(StatusCode::OK, client.into()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -119,7 +119,7 @@ pub async fn create(
     claims: SessionClaims,
     Json(body): Json<CreateRequest>,
     Extension(db): Extension<Database>,
-) -> crate::Result<(StatusCode, Json<ClientResponse>)> {
+) -> crate::Result<Response<ClientResponse>> {
     let user_id = if let Some(id) = body.user {
         if !claims.scope.contains(&session::Scope::ClientWrite) && claims.sub != id {
             return Err(AuthenticationError::InsufficientPermission.into());
@@ -152,7 +152,7 @@ pub async fn create(
 
     db.insert_client(&client).await?;
 
-    Ok((StatusCode::CREATED, Json(ClientResponse::from(client))))
+    Ok(Response::with_status(StatusCode::CREATED, client.into()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -169,7 +169,7 @@ pub async fn update(
     claims: SessionClaims,
     Json(body): Json<UpdateRequest>,
     Extension(db): Extension<Database>,
-) -> crate::Result<(StatusCode, Json<ClientResponse>)> {
+) -> crate::Result<Response<ClientResponse>> {
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
         Err(_) => return Err(ClientError::InvalidId.into()),
@@ -206,7 +206,7 @@ pub async fn update(
 
     let doc = db.update_client(id, user, doc).await?;
 
-    Ok((StatusCode::OK, Json(ClientResponse::from(doc))))
+    Ok(Response::with_status(StatusCode::OK, doc.into()))
 }
 
 pub async fn delete(

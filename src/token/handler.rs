@@ -4,6 +4,7 @@ use crate::{
     authentication::token::TokenConfig,
     client::ClientError,
     database::Database,
+    model::Response,
     session::{SessionClaims, SessionError},
     token::{ClientClaims, ServiceClaims, TokenError},
     user::UserError,
@@ -31,7 +32,7 @@ pub async fn get(
     Extension(db): Extension<Database>,
     Extension(enc): Extension<Aead256>,
     Extension(config): Extension<TokenConfig>,
-) -> crate::Result<(StatusCode, Json<TokenResponse>)> {
+) -> crate::Result<Response<TokenResponse>> {
     let client_id = match ObjectId::parse_str(&claims.sub) {
         Ok(v) => v,
         Err(_) => return Err(ClientError::InvalidId.into()),
@@ -78,7 +79,7 @@ pub async fn get(
 
     db.set_client_issued(client_id).await?;
 
-    Ok((StatusCode::CREATED, Json(response)))
+    Ok(Response::with_status(StatusCode::CREATED, response))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,7 +93,7 @@ pub async fn create(
     Json(body): Json<CreateRequest>,
     Extension(db): Extension<Database>,
     Extension(config): Extension<TokenConfig>,
-) -> crate::Result<(StatusCode, Json<TokenResponse>)> {
+) -> crate::Result<Response<TokenResponse>> {
     let client_id = match ObjectId::parse_str(&body.client) {
         Ok(v) => v,
         Err(_) => return Err(ClientError::InvalidId.into()),
@@ -129,5 +130,5 @@ pub async fn create(
 
     db.set_client_issued(client_id).await?;
 
-    Ok((StatusCode::CREATED, Json(response)))
+    Ok(Response::with_status(StatusCode::CREATED, response))
 }

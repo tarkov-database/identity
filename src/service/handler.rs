@@ -2,7 +2,7 @@ use crate::{
     authentication::AuthenticationError,
     database::Database,
     error::QueryError,
-    model::{List, ListOptions, Status},
+    model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
     utils::crypto::Aead256,
 };
@@ -57,7 +57,7 @@ pub async fn list(
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
     Extension(db): Extension<Database>,
-) -> crate::Result<(StatusCode, Json<List<ServiceResponse>>)> {
+) -> crate::Result<Response<List<ServiceResponse>>> {
     if !claims.scope.contains(&session::Scope::ServiceRead) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
@@ -65,14 +65,14 @@ pub async fn list(
     let (services, total) = db.get_services(to_document(&filter).unwrap(), opts).await?;
     let list = List::new(total, services);
 
-    Ok((StatusCode::OK, Json(list)))
+    Ok(Response::new(list))
 }
 
 pub async fn get_by_id(
     Path(id): Path<String>,
     claims: SessionClaims,
     Extension(db): Extension<Database>,
-) -> crate::Result<(StatusCode, Json<ServiceResponse>)> {
+) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&session::Scope::ServiceRead) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
@@ -84,7 +84,7 @@ pub async fn get_by_id(
 
     let service = db.get_service(doc! { "_id": id }).await?;
 
-    Ok((StatusCode::OK, Json(ServiceResponse::from(service))))
+    Ok(Response::with_status(StatusCode::OK, service.into()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -102,7 +102,7 @@ pub async fn create(
     Json(body): Json<CreateRequest>,
     Extension(db): Extension<Database>,
     Extension(enc): Extension<Aead256>,
-) -> crate::Result<(StatusCode, Json<ServiceResponse>)> {
+) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
@@ -125,7 +125,7 @@ pub async fn create(
 
     db.insert_service(&service).await?;
 
-    Ok((StatusCode::CREATED, Json(ServiceResponse::from(service))))
+    Ok(Response::with_status(StatusCode::CREATED, service.into()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -144,7 +144,7 @@ pub async fn update(
     Json(body): Json<UpdateRequest>,
     Extension(db): Extension<Database>,
     Extension(enc): Extension<Aead256>,
-) -> crate::Result<(StatusCode, Json<ServiceResponse>)> {
+) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
@@ -193,7 +193,7 @@ pub async fn update(
 
     let doc = db.update_service(id, doc).await?;
 
-    Ok((StatusCode::OK, Json(ServiceResponse::from(doc))))
+    Ok(Response::with_status(StatusCode::OK, doc.into()))
 }
 
 pub async fn delete(

@@ -2,6 +2,7 @@ use crate::{
     authentication::{password, token::TokenConfig},
     database::Database,
     error::Error,
+    model::Response,
     session::{Scope, SessionClaims, SessionError},
     user::UserError,
 };
@@ -34,7 +35,7 @@ pub async fn create(
     Json(body): Json<CreateRequest>,
     Extension(db): Extension<Database>,
     Extension(config): Extension<TokenConfig>,
-) -> crate::Result<(StatusCode, Json<SessionResponse>)> {
+) -> crate::Result<Response<SessionResponse>> {
     let user = match db.get_user(doc! {"email": body.email }).await {
         Ok(u) => u,
         Err(e) => match e {
@@ -78,5 +79,5 @@ pub async fn create(
 
     db.set_user_session(user.id).await?;
 
-    Ok((StatusCode::CREATED, Json(response)))
+    Ok(Response::with_status(StatusCode::CREATED, response))
 }
