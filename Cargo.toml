@@ -22,7 +22,11 @@ tower = { version = "0.4", features = [
     "load-shed",
     "limit",
 ] }
-tower-http = { version = "0.2.0", features = ["add-extension", "trace"] }
+tower-http = { version = "0.2.0", features = [
+    "add-extension",
+    "trace",
+    "sensitive-headers",
+] }
 axum = { version = "0.4", features = ["headers"] }
 reqwest = { version = "0.11", features = ["json"] }
 headers = "0.3"

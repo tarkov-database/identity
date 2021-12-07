@@ -17,16 +17,19 @@ use crate::error::handle_error;
 use crate::utils::crypto::Aead256;
 
 use std::env;
+use std::iter::once;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use axum::error_handling::HandleErrorLayer;
 use axum::{Router, Server};
+use hyper::header::AUTHORIZATION;
 use mongodb::options::ClientOptions;
 use serde::Deserialize;
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
+use tower_http::sensitive_headers::SetSensitiveHeadersLayer;
 use tower_http::trace::TraceLayer;
 
 #[cfg(feature = "jemalloc")]
@@ -110,7 +113,8 @@ async fn main() -> Result<()> {
         .layer(AddExtensionLayer::new(db))
         .layer(AddExtensionLayer::new(token_config))
         .layer(AddExtensionLayer::new(aead))
-        .layer(AddExtensionLayer::new(mail));
+        .layer(AddExtensionLayer::new(mail))
+        .layer(SetSensitiveHeadersLayer::new(once(AUTHORIZATION)));
 
     let svc_routes = Router::new()
         .nest("/user", user::routes())
