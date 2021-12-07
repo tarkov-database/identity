@@ -1,17 +1,11 @@
-use std::convert::Infallible;
-
 use crate::{
     action::ActionError, authentication::AuthenticationError, client::ClientError, model::Status,
-    service::ServiceError, session::SessionError, user::UserError,
+    service::ServiceError, session::SessionError, token::TokenError, user::UserError,
 };
 
-use log::error;
-use warp::{
-    body::BodyDeserializeError,
-    hyper::StatusCode,
-    reject::{MethodNotAllowed, MissingHeader},
-    Rejection, Reply,
-};
+use hyper::StatusCode;
+use tower::BoxError;
+use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -30,22 +24,52 @@ pub enum Error {
     #[error("MongoDB error: {0}")]
     Action(#[from] ActionError),
     #[error("action error: {0}")]
+    Token(#[from] TokenError),
+    #[error("action error: {0}")]
     Database(#[from] mongodb::error::Error),
     #[error("Envy error: {0}")]
     Envy(#[from] envy::Error),
     #[error("reqwest error: {0}")]
     Http(#[from] reqwest::Error),
+    #[error("hyper error: {0}")]
+    Hyper(#[from] hyper::Error),
 }
 
-impl warp::reject::Reject for Error {}
+impl axum::response::IntoResponse for Error {
+    fn into_response(self) -> axum::response::Response {
+        let res = match self {
+            Error::Auth(e) => e.error_response(),
+            Error::Query(e) => e.error_response(),
+            Error::User(e) => e.error_response(),
+            Error::Client(e) => e.error_response(),
+            Error::Session(e) => e.error_response(),
+            Error::Service(e) => e.error_response(),
+            Error::Action(e) => e.error_response(),
+            Error::Token(e) => e.error_response(),
+            Error::Database(e) => {
+                error!("database error: {:?}", e);
+                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+            }
+            Error::Http(e) => {
+                error!("http client error: {:?}", e);
+                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+            }
+            Error::Hyper(e) => {
+                error!("hyper error: {:?}", e);
+                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+            }
+            Error::Envy(_) => unreachable!(),
+        };
+
+        res.into_response()
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
     #[error("invalid data")]
     InvalidBody,
 }
-
-impl warp::reject::Reject for QueryError {}
 
 impl ErrorResponse for QueryError {
     type Response = Status;
@@ -61,66 +85,29 @@ impl ErrorResponse for QueryError {
     }
 }
 
-pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
-    if let Some(err) = err.find::<Error>() {
-        let res = match err {
-            Error::Auth(e) => e.error_response(),
-            Error::Query(e) => e.error_response(),
-            Error::User(e) => e.error_response(),
-            Error::Client(e) => e.error_response(),
-            Error::Session(e) => e.error_response(),
-            Error::Service(e) => e.error_response(),
-            Error::Action(e) => e.error_response(),
-            Error::Database(e) => {
-                error!("database error: {:?}", e);
-                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
-            }
-            Error::Http(e) => {
-                error!("http client error: {:?}", e);
-                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
-            }
-            Error::Envy(_) => unreachable!(),
-        };
-        return Ok(res);
+pub async fn handle_error(error: BoxError) -> Status {
+    if error.is::<tower::timeout::error::Elapsed>() {
+        return Status::new(StatusCode::REQUEST_TIMEOUT, "request timed out");
     }
 
-    if err.is_not_found() {
-        return Ok(Status::new(StatusCode::NOT_FOUND, "resource not found"));
+    if error.is::<tower::load_shed::error::Overloaded>() {
+        return Status::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "service is overloaded, try again later",
+        );
     }
 
-    if let Some(e) = err.find::<MissingHeader>() {
-        let (code, msg) = match e.name() {
-            "authorization" => (StatusCode::UNAUTHORIZED, String::from("not authorized")),
-            _ => (
-                StatusCode::BAD_REQUEST,
-                format!("\"{}\" header is missing", e.name()),
-            ),
-        };
-        return Ok(Status::new(code, msg));
-    }
-
-    if let Some(err) = err.find::<BodyDeserializeError>() {
-        return Ok(Status::new(StatusCode::BAD_REQUEST, err));
-    }
-
-    if let Some(e) = err.find::<MethodNotAllowed>() {
-        return Ok(Status::new(StatusCode::METHOD_NOT_ALLOWED, e));
-    }
-
-    error!("unhandled rejection: {:?}", err);
-    Ok(Status::new(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "internal error",
-    ))
+    error!("internal error: {:?}", error);
+    Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
 }
 
 pub trait ErrorResponse
 where
-    Self: std::error::Error + warp::reject::Reject,
+    Self: std::error::Error,
 {
-    type Response: Reply;
+    type Response: axum::response::IntoResponse;
 
-    fn status_code(&self) -> warp::hyper::StatusCode;
+    fn status_code(&self) -> axum::http::StatusCode;
 
     fn error_response(&self) -> Self::Response;
 }

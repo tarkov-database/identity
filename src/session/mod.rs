@@ -1,13 +1,26 @@
-mod filter;
 mod handler;
+mod routes;
 
-use crate::{error, model::Status, user::Role};
+use crate::{
+    authentication::{
+        token::{TokenConfig, TokenError},
+        AuthenticationError,
+    },
+    error::{self, Error},
+    model::Status,
+    user::Role,
+};
 
+use axum::{
+    async_trait,
+    extract::{Extension, FromRequest, RequestParts, TypedHeader},
+};
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
+use headers::{authorization::Bearer, Authorization};
+use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
-use warp::hyper::StatusCode;
 
-pub use filter::filters;
+pub use routes::routes;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -15,9 +28,9 @@ pub enum SessionError {
     BadCredentials,
     #[error("not allowed: {0}")]
     NotAllowed(String),
+    #[error("token encoding failed")]
+    Encoding,
 }
-
-impl warp::reject::Reject for SessionError {}
 
 impl error::ErrorResponse for SessionError {
     type Response = Status;
@@ -26,6 +39,7 @@ impl error::ErrorResponse for SessionError {
         match self {
             SessionError::BadCredentials => StatusCode::UNAUTHORIZED,
             SessionError::NotAllowed(_) => StatusCode::FORBIDDEN,
+            SessionError::Encoding => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -116,5 +130,31 @@ impl From<Role> for Vec<Scope> {
             Role::ServiceEditor => vec![Scope::ServiceRead, Scope::ServiceWrite],
             Role::ServiceViewer => vec![Scope::ServiceRead],
         }
+    }
+}
+
+#[async_trait]
+impl<B> FromRequest<B> for SessionClaims
+where
+    B: Send,
+{
+    type Rejection = Error;
+
+    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
+        let Extension(config) = Extension::<TokenConfig>::from_request(req)
+            .await
+            .expect("token config missing");
+
+        let TypedHeader(Authorization(bearer)) =
+            TypedHeader::<Authorization<Bearer>>::from_request(req)
+                .await
+                .map_err(|_| {
+                    AuthenticationError::InvalidHeader("authorization header missing".to_string())
+                })?;
+
+        let token_data = jsonwebtoken::decode(bearer.token(), &config.dec_key, &config.validation)
+            .map_err(|e| AuthenticationError::from(TokenError::from(e)))?;
+
+        Ok(token_data.claims)
     }
 }

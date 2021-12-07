@@ -4,24 +4,23 @@ use crate::{
     authentication::token::TokenConfig,
     client::ClientError,
     database::Database,
-    error::Error,
-    model::Status,
     session::{SessionClaims, SessionError},
-    token::{ClientClaims, ServiceClaims},
+    token::{ClientClaims, ServiceClaims, TokenError},
     user::UserError,
     utils::crypto::Aead256,
 };
 
+use axum::{extract::Extension, Json};
 use chrono::{serde::ts_seconds, DateTime, Utc};
+use hyper::StatusCode;
 use jsonwebtoken::{encode, EncodingKey};
 use log::error;
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
-use warp::{http::StatusCode, reply, Rejection, Reply};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TokenResponse {
+pub struct TokenResponse {
     token: String,
     #[serde(with = "ts_seconds")]
     expires_at: DateTime<Utc>,
@@ -29,13 +28,13 @@ struct TokenResponse {
 
 pub async fn get(
     claims: ClientClaims,
-    db: Database,
-    enc: Aead256,
-    config: TokenConfig,
-) -> std::result::Result<reply::Response, Rejection> {
+    Extension(db): Extension<Database>,
+    Extension(enc): Extension<Aead256>,
+    Extension(config): Extension<TokenConfig>,
+) -> crate::Result<(StatusCode, Json<TokenResponse>)> {
     let client_id = match ObjectId::parse_str(&claims.sub) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(ClientError::InvalidId).into()),
+        Err(_) => return Err(ClientError::InvalidId.into()),
     };
 
     dbg!("test!");
@@ -44,7 +43,7 @@ pub async fn get(
     let svc = db.get_service(doc! { "_id": client.service }).await?;
 
     if !client.unlocked {
-        return Err(Error::from(SessionError::NotAllowed("client is locked".to_string())).into());
+        return Err(SessionError::NotAllowed("client is locked".to_string()).into());
     }
 
     let header = jsonwebtoken::Header::default();
@@ -68,9 +67,7 @@ pub async fn get(
         Ok(t) => t,
         Err(e) => {
             error!("Error while encoding service token: {:?}", e);
-            return Ok(
-                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "token encoding failed").into(),
-            );
+            return Err(TokenError::Encoding.into());
         }
     };
 
@@ -81,7 +78,7 @@ pub async fn get(
 
     db.set_client_issued(client_id).await?;
 
-    Ok(reply::with_status(reply::json(&response), StatusCode::CREATED).into_response())
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,17 +89,17 @@ pub struct CreateRequest {
 
 pub async fn create(
     claims: SessionClaims,
-    body: CreateRequest,
-    db: Database,
-    config: TokenConfig,
-) -> std::result::Result<reply::Response, Rejection> {
+    Json(body): Json<CreateRequest>,
+    Extension(db): Extension<Database>,
+    Extension(config): Extension<TokenConfig>,
+) -> crate::Result<(StatusCode, Json<TokenResponse>)> {
     let client_id = match ObjectId::parse_str(&body.client) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(ClientError::InvalidId).into()),
+        Err(_) => return Err(ClientError::InvalidId.into()),
     };
     let user_id = match ObjectId::parse_str(&claims.sub) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(UserError::InvalidId).into()),
+        Err(_) => return Err(UserError::InvalidId.into()),
     };
 
     let client = db
@@ -110,7 +107,7 @@ pub async fn create(
         .await?;
 
     if !client.unlocked {
-        return Err(Error::from(SessionError::NotAllowed("client is locked".to_string())).into());
+        return Err(SessionError::NotAllowed("client is locked".to_string()).into());
     }
 
     let header = jsonwebtoken::Header::default();
@@ -121,9 +118,7 @@ pub async fn create(
         Ok(t) => t,
         Err(e) => {
             error!("Error while encoding client token: {:?}", e);
-            return Ok(
-                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "token encoding failed").into(),
-            );
+            return Err(TokenError::Encoding.into());
         }
     };
 
@@ -134,5 +129,5 @@ pub async fn create(
 
     db.set_client_issued(client_id).await?;
 
-    Ok(reply::with_status(reply::json(&response), StatusCode::CREATED).into_response())
+    Ok((StatusCode::CREATED, Json(response)))
 }

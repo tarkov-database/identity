@@ -4,7 +4,6 @@ use std::{collections::HashMap, convert::Infallible, time::Duration};
 
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use warp::Filter;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -124,8 +123,4 @@ impl Client {
 
         Ok(())
     }
-}
-
-pub fn with_mail(mail: Client) -> impl Filter<Extract = (Client,), Error = Infallible> + Clone {
-    warp::any().map(move || mail.clone())
 }

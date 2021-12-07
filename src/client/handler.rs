@@ -1,7 +1,7 @@
 use crate::{
     authentication::AuthenticationError,
     database::Database,
-    error::{Error, QueryError},
+    error::QueryError,
     model::{List, ListOptions, Status},
     session::{self, SessionClaims},
     user::UserError,
@@ -9,10 +9,14 @@ use crate::{
 
 use super::{ClientDocument, ClientError};
 
+use axum::{
+    extract::{Extension, Path, Query},
+    Json,
+};
 use chrono::{serde::ts_seconds, DateTime, NaiveDateTime, Utc};
+use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
 use serde::{Deserialize, Serialize};
-use warp::{http::StatusCode, reply, Rejection, Reply};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,10 +61,10 @@ pub struct Filter {
 
 pub async fn list(
     claims: SessionClaims,
-    filter: Filter,
-    opts: ListOptions,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Query(filter): Query<Filter>,
+    Query(opts): Query<ListOptions>,
+    Extension(db): Extension<Database>,
+) -> crate::Result<(StatusCode, Json<List<ClientResponse>>)> {
     let user = if !claims.scope.contains(&session::Scope::ClientRead) {
         Some(&claims.sub)
     } else {
@@ -76,20 +80,19 @@ pub async fn list(
     }
 
     let (clients, total) = db.get_clients(f, opts).await?;
-    let list: List<ClientResponse> =
-        List::new(total, clients.into_iter().map(|d| d.into()).collect());
+    let list = List::new(total, clients);
 
-    Ok(list.into())
+    Ok((StatusCode::OK, Json(list)))
 }
 
 pub async fn get_by_id(
-    id: String,
+    Path(id): Path<String>,
     claims: SessionClaims,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Extension(db): Extension<Database>,
+) -> crate::Result<(StatusCode, Json<ClientResponse>)> {
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(ClientError::InvalidId).into()),
+        Err(_) => return Err(ClientError::InvalidId.into()),
     };
 
     let mut filter = doc! { "_id": id };
@@ -100,10 +103,7 @@ pub async fn get_by_id(
 
     let client = db.get_client(filter).await?;
 
-    Ok(
-        reply::with_status(reply::json(&ClientResponse::from(client)), StatusCode::OK)
-            .into_response(),
-    )
+    Ok((StatusCode::OK, Json(ClientResponse::from(client))))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -117,16 +117,16 @@ pub struct CreateRequest {
 
 pub async fn create(
     claims: SessionClaims,
-    body: CreateRequest,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Json(body): Json<CreateRequest>,
+    Extension(db): Extension<Database>,
+) -> crate::Result<(StatusCode, Json<ClientResponse>)> {
     let user_id = if let Some(id) = body.user {
         if !claims.scope.contains(&session::Scope::ClientWrite) && claims.sub != id {
-            return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+            return Err(AuthenticationError::InsufficientPermission.into());
         }
         match ObjectId::parse_str(&id) {
             Ok(v) => v,
-            Err(_) => return Err(Error::from(UserError::InvalidId).into()),
+            Err(_) => return Err(UserError::InvalidId.into()),
         }
     } else {
         ObjectId::parse_str(&claims.sub).unwrap()
@@ -134,7 +134,7 @@ pub async fn create(
 
     let svc_id = match ObjectId::parse_str(&body.service) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(UserError::InvalidId).into()),
+        Err(_) => return Err(UserError::InvalidId.into()),
     };
 
     let svc = db.get_service(doc! { "_id": svc_id }).await?;
@@ -152,11 +152,7 @@ pub async fn create(
 
     db.insert_client(&client).await?;
 
-    Ok(reply::with_status(
-        reply::json(&ClientResponse::from(client)),
-        StatusCode::CREATED,
-    )
-    .into_response())
+    Ok((StatusCode::CREATED, Json(ClientResponse::from(client))))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -169,14 +165,14 @@ pub struct UpdateRequest {
 }
 
 pub async fn update(
-    id: String,
+    Path(id): Path<String>,
     claims: SessionClaims,
-    body: UpdateRequest,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Json(body): Json<UpdateRequest>,
+    Extension(db): Extension<Database>,
+) -> crate::Result<(StatusCode, Json<ClientResponse>)> {
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(ClientError::InvalidId).into()),
+        Err(_) => return Err(ClientError::InvalidId.into()),
     };
 
     let mut doc = Document::new();
@@ -184,7 +180,7 @@ pub async fn update(
         if let Some(v) = body.user {
             let id = match ObjectId::parse_str(&v) {
                 Ok(v) => v,
-                Err(_) => return Err(Error::from(UserError::InvalidId).into()),
+                Err(_) => return Err(UserError::InvalidId.into()),
             };
             doc.insert("user", id);
         }
@@ -199,7 +195,7 @@ pub async fn update(
         doc.insert("scope", v);
     }
     if doc.is_empty() {
-        return Err(Error::from(QueryError::InvalidBody).into());
+        return Err(QueryError::InvalidBody.into());
     }
 
     let user = if !claims.scope.contains(&session::Scope::ClientWrite) {
@@ -210,24 +206,24 @@ pub async fn update(
 
     let doc = db.update_client(id, user, doc).await?;
 
-    Ok(reply::with_status(reply::json(&ClientResponse::from(doc)), StatusCode::OK).into_response())
+    Ok((StatusCode::OK, Json(ClientResponse::from(doc))))
 }
 
 pub async fn delete(
-    id: String,
+    Path(id): Path<String>,
     claims: SessionClaims,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Extension(db): Extension<Database>,
+) -> crate::Result<Status> {
     if !claims.scope.contains(&session::Scope::ClientWrite) {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+        return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(ClientError::InvalidId).into()),
+        Err(_) => return Err(ClientError::InvalidId.into()),
     };
 
     db.delete_client(id).await?;
 
-    Ok(Status::new(StatusCode::OK, "client deleted").into())
+    Ok(Status::new(StatusCode::OK, "client deleted"))
 }

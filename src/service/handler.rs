@@ -1,7 +1,7 @@
 use crate::{
     authentication::AuthenticationError,
     database::Database,
-    error::{Error, QueryError},
+    error::QueryError,
     model::{List, ListOptions, Status},
     session::{self, SessionClaims},
     utils::crypto::Aead256,
@@ -9,10 +9,14 @@ use crate::{
 
 use super::{ServiceDocument, ServiceError};
 
+use axum::{
+    extract::{Extension, Path, Query},
+    Json,
+};
 use chrono::{serde::ts_seconds, DateTime, Utc};
+use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
 use serde::{Deserialize, Serialize};
-use warp::{http::StatusCode, reply, Rejection, Reply};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,41 +54,37 @@ pub struct Filter {
 
 pub async fn list(
     claims: SessionClaims,
-    filter: Filter,
-    opts: ListOptions,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Query(filter): Query<Filter>,
+    Query(opts): Query<ListOptions>,
+    Extension(db): Extension<Database>,
+) -> crate::Result<(StatusCode, Json<List<ServiceResponse>>)> {
     if !claims.scope.contains(&session::Scope::ServiceRead) {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+        return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let (services, total) = db.get_services(to_document(&filter).unwrap(), opts).await?;
-    let list: List<ServiceResponse> =
-        List::new(total, services.into_iter().map(|d| d.into()).collect());
+    let list = List::new(total, services);
 
-    Ok(list.into())
+    Ok((StatusCode::OK, Json(list)))
 }
 
 pub async fn get_by_id(
-    id: String,
+    Path(id): Path<String>,
     claims: SessionClaims,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Extension(db): Extension<Database>,
+) -> crate::Result<(StatusCode, Json<ServiceResponse>)> {
     if !claims.scope.contains(&session::Scope::ServiceRead) {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+        return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(ServiceError::InvalidId).into()),
+        Err(_) => return Err(ServiceError::InvalidId.into()),
     };
 
     let service = db.get_service(doc! { "_id": id }).await?;
 
-    Ok(
-        reply::with_status(reply::json(&ServiceResponse::from(service)), StatusCode::OK)
-            .into_response(),
-    )
+    Ok((StatusCode::OK, Json(ServiceResponse::from(service))))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -99,12 +99,12 @@ pub struct CreateRequest {
 
 pub async fn create(
     claims: SessionClaims,
-    body: CreateRequest,
-    db: Database,
-    enc: Aead256,
-) -> std::result::Result<reply::Response, Rejection> {
+    Json(body): Json<CreateRequest>,
+    Extension(db): Extension<Database>,
+    Extension(enc): Extension<Aead256>,
+) -> crate::Result<(StatusCode, Json<ServiceResponse>)> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+        return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let secret = if let Some(s) = body.secret {
@@ -125,11 +125,7 @@ pub async fn create(
 
     db.insert_service(&service).await?;
 
-    Ok(reply::with_status(
-        reply::json(&ServiceResponse::from(service)),
-        StatusCode::CREATED,
-    )
-    .into_response())
+    Ok((StatusCode::CREATED, Json(ServiceResponse::from(service))))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -143,19 +139,19 @@ pub struct UpdateRequest {
 }
 
 pub async fn update(
-    id: String,
+    Path(id): Path<String>,
     claims: SessionClaims,
-    body: UpdateRequest,
-    db: Database,
-    enc: Aead256,
-) -> std::result::Result<reply::Response, Rejection> {
+    Json(body): Json<UpdateRequest>,
+    Extension(db): Extension<Database>,
+    Extension(enc): Extension<Aead256>,
+) -> crate::Result<(StatusCode, Json<ServiceResponse>)> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+        return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(ServiceError::InvalidId).into()),
+        Err(_) => return Err(ServiceError::InvalidId.into()),
     };
 
     let svc = db.get_service(doc! { "_id": id }).await?;
@@ -163,14 +159,14 @@ pub async fn update(
     if let Some(ref def) = body.scope_default {
         if let Some(ref scope) = body.scope {
             if !def.iter().all(|s| scope.contains(s)) {
-                return Err(Error::from(ServiceError::UndefinedScope).into());
+                return Err(ServiceError::UndefinedScope.into());
             }
         } else if !def.iter().all(|s| svc.scope.contains(s)) {
-            return Err(Error::from(ServiceError::UndefinedScope).into());
+            return Err(ServiceError::UndefinedScope.into());
         }
     } else if let Some(ref scope) = body.scope {
         if svc.scope_default.iter().all(|s| scope.contains(s)) {
-            return Err(Error::from(ServiceError::UndefinedScope).into());
+            return Err(ServiceError::UndefinedScope.into());
         }
     }
 
@@ -192,32 +188,29 @@ pub async fn update(
         doc.insert("scopeDefault", v);
     }
     if doc.is_empty() {
-        return Err(Error::from(QueryError::InvalidBody).into());
+        return Err(QueryError::InvalidBody.into());
     }
 
     let doc = db.update_service(id, doc).await?;
 
-    Ok(
-        reply::with_status(reply::json(&ServiceResponse::from(doc)), StatusCode::OK)
-            .into_response(),
-    )
+    Ok((StatusCode::OK, Json(ServiceResponse::from(doc))))
 }
 
 pub async fn delete(
-    id: String,
+    Path(id): Path<String>,
     claims: SessionClaims,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Extension(db): Extension<Database>,
+) -> crate::Result<Status> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+        return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(ServiceError::InvalidId).into()),
+        Err(_) => return Err(ServiceError::InvalidId.into()),
     };
 
     db.delete_service(id).await?;
 
-    Ok(Status::new(StatusCode::OK, "service deleted").into())
+    Ok(Status::new(StatusCode::OK, "service deleted"))
 }

@@ -1,16 +1,8 @@
-use crate::{error::Error, Result};
-
-use super::AuthenticationError;
-
-use std::convert::Infallible;
-
 use jsonwebtoken::{
-    decode,
     errors::{Error as JwtError, ErrorKind},
-    DecodingKey, EncodingKey, TokenData, Validation,
+    DecodingKey, EncodingKey, Validation,
 };
-use serde::Deserialize;
-use warp::{Filter, Rejection};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TokenError {
@@ -35,107 +27,47 @@ impl From<JwtError> for TokenError {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TokenType {
+    Session,
+    Client,
+    Service,
+    Action,
+}
+
 #[derive(Debug, Clone)]
 pub struct TokenConfig {
     pub enc_key: EncodingKey,
     pub dec_key: DecodingKey<'static>,
     pub validation: Validation,
+    pub r#type: Option<TokenType>,
 }
 
 impl TokenConfig {
     const LEEWAY: u64 = 10;
 
-    pub fn from_secret<S, A>(secret: S, audience: A) -> Self
+    pub fn from_secret<S, A, T>(secret: S, audience: A) -> Self
     where
         S: AsRef<[u8]>,
-        A: Into<Vec<String>>,
+        A: AsRef<[T]>,
+        T: ToString,
     {
         let mut validation = Validation {
             leeway: Self::LEEWAY,
             ..Validation::default()
         };
-        validation.set_audience(&audience.into());
+        validation.set_audience(audience.as_ref());
 
         Self {
             enc_key: EncodingKey::from_secret(secret.as_ref()),
             dec_key: DecodingKey::from_secret(secret.as_ref()).into_static(),
             validation,
+            r#type: None,
         }
     }
-}
 
-pub fn with_config(
-    config: TokenConfig,
-) -> impl Filter<Extract = (TokenConfig,), Error = Infallible> + Clone {
-    warp::any().map(move || config.clone())
-}
-
-/// With authorization header
-pub fn with_auth<T>(config: TokenConfig) -> impl Filter<Extract = (T,), Error = Rejection> + Clone
-where
-    T: serde::de::DeserializeOwned,
-{
-    warp::header::<String>("authorization")
-        .map(move |header| (header, config.clone()))
-        .and_then(auth_handler)
-}
-
-async fn auth_handler<T>(
-    (header, config): (String, TokenConfig),
-) -> std::result::Result<T, Rejection>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let token = if header.starts_with("Bearer ") {
-        header.strip_prefix("Bearer ").unwrap()
-    } else {
-        return Err(Error::from(AuthenticationError::InvalidHeader(
-            "authorization header is invalid".to_string(),
-        ))
-        .into());
-    };
-
-    let data = decode_token(token, config)?;
-
-    Ok(data.claims)
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TokenQuery {
-    token: String,
-}
-
-/// With query string token
-pub fn with_token<T>(config: TokenConfig) -> impl Filter<Extract = (T,), Error = Rejection> + Clone
-where
-    T: serde::de::DeserializeOwned,
-{
-    warp::query::<TokenQuery>()
-        .map(move |query: TokenQuery| (query.token, config.clone()))
-        .and_then(token_handler)
-}
-
-async fn token_handler<T>(
-    (token, config): (String, TokenConfig),
-) -> std::result::Result<T, Rejection>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let data = decode_token(&token, config)?;
-
-    Ok(data.claims)
-}
-
-#[inline]
-pub fn decode_token<T>(token: &str, config: TokenConfig) -> Result<TokenData<T>>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let data = match decode::<T>(token, &config.dec_key, &config.validation) {
-        Ok(d) => d,
-        Err(e) => return Err(AuthenticationError::from(TokenError::from(e)).into()),
-    };
-
-    Ok(data)
+    pub fn set_type(&mut self, r#type: Option<TokenType>) {
+        self.r#type = r#type;
+    }
 }

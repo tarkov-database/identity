@@ -13,15 +13,21 @@ mod utils;
 
 use crate::authentication::token::TokenConfig;
 use crate::database::Database;
+use crate::error::handle_error;
 use crate::utils::crypto::Aead256;
 
 use std::env;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
+use std::time::Duration;
 
+use axum::error_handling::HandleErrorLayer;
+use axum::{Router, Server};
 use mongodb::options::ClientOptions;
 use serde::Deserialize;
-use warp::Filter;
+use tower::ServiceBuilder;
+use tower_http::add_extension::AddExtensionLayer;
+use tower_http::trace::TraceLayer;
 
 #[cfg(feature = "jemalloc")]
 #[global_allocator]
@@ -72,7 +78,7 @@ async fn main() -> Result<()> {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "info");
     }
-    env_logger::init();
+    tracing_subscriber::fmt::init();
 
     let prefix = envy::prefixed("IDENTITY_");
 
@@ -95,28 +101,34 @@ async fn main() -> Result<()> {
         app_config.mail_from,
     )?;
 
-    let user_filter = user::filters(db.clone(), token_config.clone(), mail.clone());
-    let client_filter = client::filters(db.clone(), token_config.clone());
-    let session_filter = session::filters(db.clone(), token_config.clone());
-    let service_filter = service::filters(db.clone(), token_config.clone(), aead.clone());
-    let token_filter = token::filters(db.clone(), token_config.clone(), aead);
-    let action_filter = action::filters(db, token_config, mail);
+    let middleware = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(handle_error))
+        .load_shed()
+        .concurrency_limit(1024)
+        .timeout(Duration::from_secs(60))
+        .layer(TraceLayer::new_for_http())
+        .layer(AddExtensionLayer::new(db))
+        .layer(AddExtensionLayer::new(token_config))
+        .layer(AddExtensionLayer::new(aead))
+        .layer(AddExtensionLayer::new(mail));
 
-    let svc_routes = warp::path("user")
-        .and(user_filter)
-        .or(warp::path("client").and(client_filter))
-        .or(warp::path("session").and(session_filter))
-        .or(warp::path("service").and(service_filter))
-        .or(warp::path("token").and(token_filter))
-        .or(warp::path("action").and(action_filter));
+    let svc_routes = Router::new()
+        .nest("/user", user::routes())
+        .nest("/client", client::routes())
+        .nest("/session", session::routes())
+        .nest("/service", service::routes())
+        .nest("/token", token::routes())
+        .nest("/action", action::routes());
 
-    let routes = warp::path("v1")
-        .and(svc_routes)
-        .recover(error::handle_rejection);
+    let routes = Router::new()
+        .nest("/v1", svc_routes)
+        .layer(middleware.into_inner());
 
-    warp::serve(routes)
-        .run((app_config.server_addr, app_config.server_port))
-        .await;
+    let addr = SocketAddr::from((app_config.server_addr, app_config.server_port));
+    tracing::debug!("listening on {}", addr);
+    Server::bind(&addr)
+        .serve(routes.into_make_service())
+        .await?;
 
     Ok(())
 }

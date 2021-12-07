@@ -1,8 +1,6 @@
-use std::marker::Send;
-
+use hyper::StatusCode;
 use mongodb::bson::Document;
 use serde::{Deserialize, Deserializer, Serialize};
-use warp::{hyper::StatusCode, reply, Reply};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,16 +21,12 @@ impl Status {
     }
 }
 
-impl Reply for Status {
-    fn into_response(self) -> warp::reply::Response {
-        let status = StatusCode::from_u16(self.code).unwrap();
-        reply::with_status(reply::json(&self), status).into_response()
-    }
-}
+impl axum::response::IntoResponse for Status {
+    fn into_response(self) -> axum::response::Response {
+        let mut res = axum::Json(&self).into_response();
+        *res.status_mut() = StatusCode::from_u16(self.code).unwrap();
 
-impl From<Status> for warp::reply::Response {
-    fn from(val: Status) -> Self {
-        val.into_response()
+        res
     }
 }
 
@@ -43,21 +37,16 @@ pub struct List<T: Serialize> {
     data: Vec<T>,
 }
 
-impl<T: Serialize + Send> Reply for List<T> {
-    fn into_response(self) -> reply::Response {
-        reply::json(&self).into_response()
-    }
-}
-
-impl<T: Serialize + Send> From<List<T>> for warp::reply::Response {
-    fn from(val: List<T>) -> Self {
-        val.into_response()
-    }
-}
-
 impl<T: Serialize> List<T> {
-    pub fn new(total: u64, data: Vec<T>) -> Self {
-        Self { total, data }
+    pub fn new<D>(total: u64, data: D) -> Self
+    where
+        D: IntoIterator,
+        D::Item: Into<T>,
+    {
+        Self {
+            total,
+            data: data.into_iter().map(|d| d.into()).collect(),
+        }
     }
 }
 
