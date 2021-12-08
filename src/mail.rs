@@ -1,6 +1,6 @@
 use crate::Result;
 
-use std::{collections::HashMap, convert::Infallible, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use reqwest::Url;
 use serde::{Deserialize, Serialize};

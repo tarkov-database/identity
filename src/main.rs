@@ -12,16 +12,18 @@ mod token;
 mod user;
 mod utils;
 
-use crate::authentication::token::TokenConfig;
-use crate::database::Database;
-use crate::error::handle_error;
-use crate::utils::crypto::Aead256;
+use crate::{
+    authentication::token::TokenConfig, database::Database, error::handle_error,
+    utils::crypto::Aead256,
+};
 
-use std::env;
-use std::iter::once;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
-use std::time::Duration;
+use std::{
+    env,
+    iter::once,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::PathBuf,
+    time::Duration,
+};
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::AUTHORIZATION;
