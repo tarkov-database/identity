@@ -1,13 +1,44 @@
-use std::marker::Send;
-
+use hyper::StatusCode;
 use mongodb::bson::Document;
-use serde::{Deserialize, Deserializer, Serialize};
-use warp::{hyper::StatusCode, reply, Reply};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+#[derive(Debug)]
+pub struct Response<T>(StatusCode, T)
+where
+    T: serde::Serialize;
+
+impl<T> Response<T>
+where
+    T: serde::Serialize,
+{
+    const DEFAULT_STATUS: StatusCode = StatusCode::OK;
+
+    pub fn new(body: T) -> Self {
+        Self(Self::DEFAULT_STATUS, body)
+    }
+
+    pub fn with_status(status: StatusCode, body: T) -> Self {
+        Self(status, body)
+    }
+}
+
+impl<T> axum::response::IntoResponse for Response<T>
+where
+    T: serde::Serialize,
+{
+    fn into_response(self) -> axum::response::Response {
+        let mut res = axum::Json(&self.1).into_response();
+        *res.status_mut() = self.0;
+
+        res
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    pub code: u16,
+    #[serde(serialize_with = "se_status_code_as_u16")]
+    pub code: StatusCode,
     pub message: String,
 }
 
@@ -17,22 +48,18 @@ impl Status {
         S: ToString,
     {
         Self {
-            code: code.as_u16(),
+            code,
             message: message.to_string(),
         }
     }
 }
 
-impl Reply for Status {
-    fn into_response(self) -> warp::reply::Response {
-        let status = StatusCode::from_u16(self.code).unwrap();
-        reply::with_status(reply::json(&self), status).into_response()
-    }
-}
+impl axum::response::IntoResponse for Status {
+    fn into_response(self) -> axum::response::Response {
+        let mut res = axum::Json(&self).into_response();
+        *res.status_mut() = self.code;
 
-impl From<Status> for warp::reply::Response {
-    fn from(val: Status) -> Self {
-        val.into_response()
+        res
     }
 }
 
@@ -43,21 +70,16 @@ pub struct List<T: Serialize> {
     data: Vec<T>,
 }
 
-impl<T: Serialize + Send> Reply for List<T> {
-    fn into_response(self) -> reply::Response {
-        reply::json(&self).into_response()
-    }
-}
-
-impl<T: Serialize + Send> From<List<T>> for warp::reply::Response {
-    fn from(val: List<T>) -> Self {
-        val.into_response()
-    }
-}
-
 impl<T: Serialize> List<T> {
-    pub fn new(total: u64, data: Vec<T>) -> Self {
-        Self { total, data }
+    pub fn new<D>(total: u64, data: D) -> Self
+    where
+        D: IntoIterator,
+        D::Item: Into<T>,
+    {
+        Self {
+            total,
+            data: data.into_iter().map(|d| d.into()).collect(),
+        }
     }
 }
 
@@ -111,4 +133,11 @@ where
     };
 
     Ok(output)
+}
+
+fn se_status_code_as_u16<S>(x: &StatusCode, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_u16(x.as_u16())
 }

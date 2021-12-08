@@ -1,9 +1,9 @@
 pub mod password;
 pub mod token;
 
-use crate::{error, model::Status};
+use hyper::StatusCode;
 
-use warp::hyper::StatusCode;
+use crate::{error, model::Status};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthenticationError {
@@ -16,8 +16,6 @@ pub enum AuthenticationError {
     #[error("token error: {0}")]
     Token(#[from] token::TokenError),
 }
-
-impl warp::reject::Reject for AuthenticationError {}
 
 impl error::ErrorResponse for AuthenticationError {
     type Response = Status;

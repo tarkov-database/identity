@@ -1,12 +1,9 @@
 pub mod crypto {
-    use std::convert::Infallible;
-
     use aes_gcm_siv::{
         aead::{Aead, NewAead},
         Aes256GcmSiv, Key, Nonce,
     };
     use rand::{distributions::Alphanumeric, Rng};
-    use warp::Filter;
 
     #[derive(Debug, thiserror::Error)]
     pub enum CryptoError {
@@ -70,12 +67,6 @@ pub mod crypto {
 
             self.cipher.decrypt(nonce, &nc[Self::NONCE_SIZE..]).unwrap()
         }
-    }
-
-    pub fn with_aead(
-        aead: Aead256,
-    ) -> impl Filter<Extract = (Aead256,), Error = Infallible> + Clone {
-        warp::any().map(move || aead.clone())
     }
 }
 

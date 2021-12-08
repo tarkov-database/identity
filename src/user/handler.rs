@@ -2,22 +2,24 @@ use crate::{
     action::send_verification_mail,
     authentication::{password, token::TokenConfig, AuthenticationError},
     database::Database,
-    error::{Error, QueryError},
+    error::QueryError,
+    extract::{Query, SizedJson},
     mail,
-    model::{List, ListOptions, Status},
+    model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
 };
 
 use super::{Role, UserDocument, UserError};
 
+use axum::extract::{Extension, Path};
 use chrono::{serde::ts_seconds, DateTime, NaiveDateTime, Utc};
+use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_bson, to_document, Document};
 use serde::{Deserialize, Serialize};
-use warp::{http::StatusCode, reply, Rejection, Reply};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct UserResponse {
+pub struct UserResponse {
     pub id: String,
     pub email: String,
     pub roles: Vec<Role>,
@@ -54,10 +56,10 @@ pub struct Filter {
 
 pub async fn list(
     claims: SessionClaims,
-    filter: Filter,
-    opts: ListOptions,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Query(filter): Query<Filter>,
+    Query(opts): Query<ListOptions>,
+    Extension(db): Extension<Database>,
+) -> crate::Result<Response<List<UserResponse>>> {
     let filter = if !claims.scope.contains(&session::Scope::UserRead) {
         doc! { "_id": ObjectId::parse_str(&claims.sub).unwrap() }
     } else {
@@ -66,28 +68,28 @@ pub async fn list(
 
     let (users, total) = db.get_users(filter, opts).await?;
 
-    let list: List<UserResponse> = List::new(total, users.into_iter().map(|d| d.into()).collect());
+    let list = List::new(total, users);
 
-    Ok(list.into())
+    Ok(Response::new(list))
 }
 
 pub async fn get_by_id(
-    id: String,
+    Path(id): Path<String>,
     claims: SessionClaims,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Extension(db): Extension<Database>,
+) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserRead) && claims.sub != id {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+        return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(UserError::InvalidId).into()),
+        Err(_) => return Err(UserError::InvalidId.into()),
     };
 
     let user = db.get_user(doc! { "_id": id }).await?;
 
-    Ok(reply::with_status(reply::json(&UserResponse::from(user)), StatusCode::OK).into_response())
+    Ok(Response::new(user.into()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -100,13 +102,13 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    body: CreateRequest,
-    db: Database,
-    mail: mail::Client,
-    config: TokenConfig,
-) -> std::result::Result<reply::Response, Rejection> {
+    SizedJson(body): SizedJson<CreateRequest>,
+    Extension(db): Extension<Database>,
+    Extension(mail): Extension<mail::Client>,
+    Extension(config): Extension<TokenConfig>,
+) -> crate::Result<Response<UserResponse>> {
     if db.get_user(doc! { "email": &body.email }).await.is_ok() {
-        return Err(Error::from(UserError::AlreadyExists).into());
+        return Err(UserError::AlreadyExists.into());
     }
 
     let password_hash = password::validate_and_hash(&body.password)?;
@@ -126,10 +128,7 @@ pub async fn create(
 
     send_verification_mail(&user.email, &user.id.to_hex(), mail, config).await?;
 
-    Ok(
-        reply::with_status(reply::json(&UserResponse::from(user)), StatusCode::CREATED)
-            .into_response(),
-    )
+    Ok(Response::with_status(StatusCode::CREATED, user.into()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -142,20 +141,20 @@ pub struct UpdateRequest {
 }
 
 pub async fn update(
-    id: String,
+    Path(id): Path<String>,
     claims: SessionClaims,
-    body: UpdateRequest,
-    db: Database,
-    mail: mail::Client,
-    config: TokenConfig,
-) -> std::result::Result<reply::Response, Rejection> {
+    SizedJson(body): SizedJson<UpdateRequest>,
+    Extension(db): Extension<Database>,
+    Extension(mail): Extension<mail::Client>,
+    Extension(config): Extension<TokenConfig>,
+) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserWrite) && claims.sub != id {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+        return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(UserError::InvalidId).into()),
+        Err(_) => return Err(UserError::InvalidId.into()),
     };
 
     let mut doc = Document::new();
@@ -179,29 +178,29 @@ pub async fn update(
     }
 
     if doc.is_empty() {
-        return Err(Error::from(QueryError::InvalidBody).into());
+        return Err(QueryError::InvalidBody.into());
     }
 
     let doc = db.update_user(id, doc).await?;
 
-    Ok(reply::with_status(reply::json(&UserResponse::from(doc)), StatusCode::OK).into_response())
+    Ok(Response::new(doc.into()))
 }
 
 pub async fn delete(
-    id: String,
+    Path(id): Path<String>,
     claims: SessionClaims,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Extension(db): Extension<Database>,
+) -> crate::Result<Status> {
     if !claims.scope.contains(&session::Scope::UserWrite) {
-        return Err(Error::from(AuthenticationError::InsufficientPermission).into());
+        return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let id = match ObjectId::parse_str(&id) {
         Ok(v) => v,
-        Err(_) => return Err(Error::from(UserError::InvalidId).into()),
+        Err(_) => return Err(UserError::InvalidId.into()),
     };
 
     db.delete_user(id).await?;
 
-    Ok(Status::new(StatusCode::OK, "user deleted").into())
+    Ok(Status::new(StatusCode::OK, "user deleted"))
 }

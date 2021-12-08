@@ -1,18 +1,31 @@
-mod filter;
 mod handler;
+mod routes;
 
-use crate::{error, model::Status};
+use crate::{
+    authentication::{
+        token::{TokenConfig, TokenError as AuthTokenError},
+        AuthenticationError,
+    },
+    error::{self, Error},
+    model::Status,
+};
 
+use axum::{
+    async_trait,
+    extract::{Extension, FromRequest, RequestParts, TypedHeader},
+};
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
+use headers::{authorization::Bearer, Authorization};
+use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
-use warp::hyper::StatusCode;
 
-pub use filter::filters;
+pub use routes::routes;
 
 #[derive(Debug, thiserror::Error)]
-pub enum TokenError {}
-
-impl warp::reject::Reject for TokenError {}
+pub enum TokenError {
+    #[error("token encoding failed")]
+    Encoding,
+}
 
 impl error::ErrorResponse for TokenError {
     type Response = Status;
@@ -52,6 +65,32 @@ impl ClientClaims {
             sub: sub.into(),
             iss: iss.into(),
         }
+    }
+}
+
+#[async_trait]
+impl<B> FromRequest<B> for ClientClaims
+where
+    B: Send,
+{
+    type Rejection = Error;
+
+    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
+        let Extension(config) = Extension::<TokenConfig>::from_request(req)
+            .await
+            .expect("token config missing");
+
+        let TypedHeader(Authorization(bearer)) =
+            TypedHeader::<Authorization<Bearer>>::from_request(req)
+                .await
+                .map_err(|_| {
+                    AuthenticationError::InvalidHeader("authorization header missing".to_string())
+                })?;
+
+        let token_data = jsonwebtoken::decode(bearer.token(), &config.dec_key, &config.validation)
+            .map_err(|e| AuthenticationError::from(AuthTokenError::from(e)))?;
+
+        Ok(token_data.claims)
     }
 }
 

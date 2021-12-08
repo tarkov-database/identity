@@ -1,5 +1,5 @@
-mod filter;
 mod handler;
+mod routes;
 
 use crate::{
     database::Database,
@@ -10,14 +10,14 @@ use crate::{
 
 use chrono::{DateTime, Utc};
 use futures::stream::TryStreamExt;
+use hyper::StatusCode;
 use mongodb::{
     bson::{doc, oid::ObjectId, serde_helpers::chrono_datetime_as_bson_datetime, Document},
     options::{FindOneAndUpdateOptions, FindOptions, ReturnDocument},
 };
 use serde::{Deserialize, Serialize};
 
-pub use filter::filters;
-use warp::hyper::StatusCode;
+pub use routes::routes;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UserError {
@@ -28,8 +28,6 @@ pub enum UserError {
     #[error("user id is invalid")]
     InvalidId,
 }
-
-impl warp::reject::Reject for UserError {}
 
 impl error::ErrorResponse for UserError {
     type Response = Status;

@@ -1,5 +1,5 @@
-mod filter;
 mod handler;
+mod routes;
 
 use crate::{
     database::Database,
@@ -10,14 +10,14 @@ use crate::{
 
 use chrono::{DateTime, Utc};
 use futures::stream::TryStreamExt;
+use hyper::StatusCode;
 use mongodb::{
     bson::{doc, oid::ObjectId, serde_helpers::chrono_datetime_as_bson_datetime, Document},
     options::{FindOneAndUpdateOptions, FindOptions, ReturnDocument},
 };
 use serde::{Deserialize, Serialize};
-use warp::hyper::StatusCode;
 
-pub use filter::filters;
+pub use routes::routes;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
@@ -28,8 +28,6 @@ pub enum ServiceError {
     #[error("scope is not defined")]
     UndefinedScope,
 }
-
-impl warp::reject::Reject for ServiceError {}
 
 impl error::ErrorResponse for ServiceError {
     type Response = Status;

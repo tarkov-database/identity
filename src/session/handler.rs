@@ -2,21 +2,23 @@ use crate::{
     authentication::{password, token::TokenConfig},
     database::Database,
     error::Error,
-    model::Status,
+    extract::SizedJson,
+    model::Response,
     session::{Scope, SessionClaims, SessionError},
     user::UserError,
 };
 
+use axum::extract::Extension;
 use chrono::{serde::ts_seconds, DateTime, Utc};
+use hyper::StatusCode;
 use jsonwebtoken::encode;
 use log::error;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
-use warp::{http::StatusCode, reply, Rejection, Reply};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SessionResponse {
+pub struct SessionResponse {
     user: String,
     token: String,
     #[serde(with = "ts_seconds")]
@@ -31,35 +33,30 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    body: CreateRequest,
-    db: Database,
-    config: TokenConfig,
-) -> std::result::Result<reply::Response, Rejection> {
+    SizedJson(body): SizedJson<CreateRequest>,
+    Extension(db): Extension<Database>,
+    Extension(config): Extension<TokenConfig>,
+) -> crate::Result<Response<SessionResponse>> {
     let user = match db.get_user(doc! {"email": body.email }).await {
         Ok(u) => u,
         Err(e) => match e {
             Error::User(e) => match e {
-                UserError::NotFound => return Err(Error::from(SessionError::BadCredentials).into()),
+                UserError::NotFound => return Err(SessionError::BadCredentials.into()),
                 _ => return Err(e.into()),
             },
-            _ => return Err(e.into()),
+            _ => return Err(e),
         },
     };
 
     if !user.verified {
-        return Err(
-            Error::from(SessionError::NotAllowed("user is not verified".to_string())).into(),
-        );
+        return Err(SessionError::NotAllowed("user is not verified".to_string()).into());
     }
     if !user.can_login {
-        return Err(Error::from(SessionError::NotAllowed(
-            "user is not allowed to log in".to_string(),
-        ))
-        .into());
+        return Err(SessionError::NotAllowed("user is not allowed to log in".to_string()).into());
     }
 
     if password::verify_password(&body.password, &user.password).is_err() {
-        return Err(Error::from(SessionError::BadCredentials).into());
+        return Err(SessionError::BadCredentials.into());
     }
 
     let header = jsonwebtoken::Header::default();
@@ -71,9 +68,7 @@ pub async fn create(
         Ok(t) => t,
         Err(e) => {
             error!("Error while encoding session token: {:?}", e);
-            return Ok(
-                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "token encoding failed").into(),
-            );
+            return Err(SessionError::Encoding.into());
         }
     };
 
@@ -85,5 +80,5 @@ pub async fn create(
 
     db.set_user_session(user.id).await?;
 
-    Ok(reply::with_status(reply::json(&response), StatusCode::CREATED).into_response())
+    Ok(Response::with_status(StatusCode::CREATED, response))
 }

@@ -2,29 +2,30 @@ use crate::{
     action::{send_reset_mail, ActionType},
     authentication::{password, token::TokenConfig},
     database::Database,
-    error::Error,
+    extract::{Query, SizedJson},
     mail,
     model::Status,
 };
 
 use super::{ActionClaims, ActionError};
 
+use axum::extract::Extension;
+use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::Deserialize;
-use warp::{http::StatusCode, reply, Rejection};
 
 pub async fn verify_email(
     claims: ActionClaims,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    Extension(db): Extension<Database>,
+) -> crate::Result<Status> {
     if claims.r#type != ActionType::Verify {
-        return Err(Error::from(ActionError::Invalid).into());
+        return Err(ActionError::Invalid.into());
     }
 
     let addr = if let Some(v) = claims.email {
         v
     } else {
-        return Err(Error::from(ActionError::Invalid).into());
+        return Err(ActionError::Invalid.into());
     };
 
     let user_id = ObjectId::parse_str(claims.sub).unwrap();
@@ -32,15 +33,15 @@ pub async fn verify_email(
     let user = db.get_user(doc! {"_id": user_id }).await?;
 
     if user.email != addr {
-        return Err(Error::from(ActionError::Invalid).into());
+        return Err(ActionError::Invalid.into());
     }
     if user.verified {
-        return Err(Error::from(ActionError::AlreadyVerified).into());
+        return Err(ActionError::AlreadyVerified.into());
     }
 
     db.update_user(user_id, doc! { "verified": true }).await?;
 
-    Ok(Status::new(StatusCode::OK, "account verified").into())
+    Ok(Status::new(StatusCode::OK, "account verified"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,20 +50,20 @@ pub struct ResetOptions {
 }
 
 pub async fn request_reset(
-    req: ResetOptions,
-    db: Database,
-    mail: mail::Client,
-    config: TokenConfig,
-) -> std::result::Result<reply::Response, Rejection> {
-    let user = db.get_user(doc! { "email": req.email }).await?;
+    Query(opts): Query<ResetOptions>,
+    Extension(db): Extension<Database>,
+    Extension(mail): Extension<mail::Client>,
+    Extension(config): Extension<TokenConfig>,
+) -> crate::Result<Status> {
+    let user = db.get_user(doc! { "email": opts.email }).await?;
 
     if !user.verified {
-        return Err(Error::from(ActionError::NotVerified).into());
+        return Err(ActionError::NotVerified.into());
     }
 
     send_reset_mail(&user.email, &user.id.to_hex(), mail, config).await?;
 
-    Ok(Status::new(StatusCode::OK, "reset email sent").into())
+    Ok(Status::new(StatusCode::OK, "reset email sent"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,11 +73,11 @@ pub struct ResetRequest {
 
 pub async fn reset_password(
     claims: ActionClaims,
-    body: ResetRequest,
-    db: Database,
-) -> std::result::Result<reply::Response, Rejection> {
+    SizedJson(body): SizedJson<ResetRequest>,
+    Extension(db): Extension<Database>,
+) -> crate::Result<Status> {
     if claims.r#type != ActionType::Reset {
-        return Err(Error::from(ActionError::Invalid).into());
+        return Err(ActionError::Invalid.into());
     }
 
     let user_id = ObjectId::parse_str(claims.sub).unwrap();
@@ -86,5 +87,5 @@ pub async fn reset_password(
     db.update_user(user_id, doc! { "password": password_hash })
         .await?;
 
-    Ok(Status::new(StatusCode::OK, "new password set").into())
+    Ok(Status::new(StatusCode::OK, "new password set"))
 }
