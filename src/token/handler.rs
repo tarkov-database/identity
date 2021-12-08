@@ -4,6 +4,7 @@ use crate::{
     authentication::token::TokenConfig,
     client::ClientError,
     database::Database,
+    extract::SizedJson,
     model::Response,
     session::{SessionClaims, SessionError},
     token::{ClientClaims, ServiceClaims, TokenError},
@@ -11,7 +12,7 @@ use crate::{
     utils::crypto::Aead256,
 };
 
-use axum::{extract::Extension, Json};
+use axum::extract::Extension;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::{encode, EncodingKey};
@@ -90,7 +91,7 @@ pub struct CreateRequest {
 
 pub async fn create(
     claims: SessionClaims,
-    Json(body): Json<CreateRequest>,
+    SizedJson(body): SizedJson<CreateRequest>,
     Extension(db): Extension<Database>,
     Extension(config): Extension<TokenConfig>,
 ) -> crate::Result<Response<TokenResponse>> {

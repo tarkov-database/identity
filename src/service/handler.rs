@@ -2,6 +2,7 @@ use crate::{
     authentication::AuthenticationError,
     database::Database,
     error::QueryError,
+    extract::{Query, SizedJson},
     model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
     utils::crypto::Aead256,
@@ -9,10 +10,7 @@ use crate::{
 
 use super::{ServiceDocument, ServiceError};
 
-use axum::{
-    extract::{Extension, Path, Query},
-    Json,
-};
+use axum::extract::{Extension, Path};
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
@@ -99,7 +97,7 @@ pub struct CreateRequest {
 
 pub async fn create(
     claims: SessionClaims,
-    Json(body): Json<CreateRequest>,
+    SizedJson(body): SizedJson<CreateRequest>,
     Extension(db): Extension<Database>,
     Extension(enc): Extension<Aead256>,
 ) -> crate::Result<Response<ServiceResponse>> {
@@ -141,7 +139,7 @@ pub struct UpdateRequest {
 pub async fn update(
     Path(id): Path<String>,
     claims: SessionClaims,
-    Json(body): Json<UpdateRequest>,
+    SizedJson(body): SizedJson<UpdateRequest>,
     Extension(db): Extension<Database>,
     Extension(enc): Extension<Aead256>,
 ) -> crate::Result<Response<ServiceResponse>> {

@@ -2,16 +2,14 @@ use crate::{
     action::{send_reset_mail, ActionType},
     authentication::{password, token::TokenConfig},
     database::Database,
+    extract::{Query, SizedJson},
     mail,
     model::Status,
 };
 
 use super::{ActionClaims, ActionError};
 
-use axum::{
-    extract::{Extension, Query},
-    Json,
-};
+use axum::extract::Extension;
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::Deserialize;
@@ -75,7 +73,7 @@ pub struct ResetRequest {
 
 pub async fn reset_password(
     claims: ActionClaims,
-    Json(body): Json<ResetRequest>,
+    SizedJson(body): SizedJson<ResetRequest>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Status> {
     if claims.r#type != ActionType::Reset {

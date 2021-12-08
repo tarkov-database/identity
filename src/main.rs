@@ -3,6 +3,7 @@ mod authentication;
 mod client;
 mod database;
 mod error;
+mod extract;
 mod mail;
 mod model;
 mod service;

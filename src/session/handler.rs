@@ -2,12 +2,13 @@ use crate::{
     authentication::{password, token::TokenConfig},
     database::Database,
     error::Error,
+    extract::SizedJson,
     model::Response,
     session::{Scope, SessionClaims, SessionError},
     user::UserError,
 };
 
-use axum::{extract::Extension, Json};
+use axum::extract::Extension;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::encode;
@@ -32,7 +33,7 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    Json(body): Json<CreateRequest>,
+    SizedJson(body): SizedJson<CreateRequest>,
     Extension(db): Extension<Database>,
     Extension(config): Extension<TokenConfig>,
 ) -> crate::Result<Response<SessionResponse>> {

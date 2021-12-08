@@ -3,6 +3,7 @@ use crate::{
     authentication::{password, token::TokenConfig, AuthenticationError},
     database::Database,
     error::QueryError,
+    extract::{Query, SizedJson},
     mail,
     model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
@@ -10,7 +11,7 @@ use crate::{
 
 use super::{Role, UserDocument, UserError};
 
-use axum::extract::{Extension, Json, Path, Query};
+use axum::extract::{Extension, Path};
 use chrono::{serde::ts_seconds, DateTime, NaiveDateTime, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_bson, to_document, Document};
@@ -101,7 +102,7 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    Json(body): Json<CreateRequest>,
+    SizedJson(body): SizedJson<CreateRequest>,
     Extension(db): Extension<Database>,
     Extension(mail): Extension<mail::Client>,
     Extension(config): Extension<TokenConfig>,
@@ -142,7 +143,7 @@ pub struct UpdateRequest {
 pub async fn update(
     Path(id): Path<String>,
     claims: SessionClaims,
-    Json(body): Json<UpdateRequest>,
+    SizedJson(body): SizedJson<UpdateRequest>,
     Extension(db): Extension<Database>,
     Extension(mail): Extension<mail::Client>,
     Extension(config): Extension<TokenConfig>,
