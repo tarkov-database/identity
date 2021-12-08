@@ -15,7 +15,7 @@ jemalloc = ["jemallocator"]
 [dependencies]
 jemallocator = { version = "0.3", optional = true }
 tokio = { version = "1", features = ["full"] }
-hyper = { version = "0.14", features = ["full"] }
+hyper = { version = "0.14", features = ["http1", "server", "runtime"] }
 tower = { version = "0.4", features = [
     "util",
     "timeout",
@@ -45,7 +45,6 @@ jsonwebtoken = "7"
 passwords = "3"
 envy = "0.4"
 dotenv = "0.15"
-log = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "1"

@@ -12,9 +12,9 @@ use axum::extract::Extension;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::encode;
-use log::error;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

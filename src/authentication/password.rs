@@ -8,9 +8,9 @@ use argon2::{
     },
     Algorithm, Argon2, Params, Version,
 };
-use log::error;
 use passwords::{analyzer, scorer};
 use rand::rngs::OsRng;
+use tracing::error;
 
 /// Minimum password score
 const SCORE_MIN: f64 = 85.0;

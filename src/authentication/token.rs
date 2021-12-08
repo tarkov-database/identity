@@ -3,6 +3,7 @@ use jsonwebtoken::{
     DecodingKey, EncodingKey, Validation,
 };
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TokenError {
@@ -20,7 +21,7 @@ impl From<JwtError> for TokenError {
             ErrorKind::ExpiredSignature => Self::Expired,
             ErrorKind::ImmatureSignature => Self::Immature,
             _ => {
-                log::error!("{:?}", error);
+                error!("{:?}", error);
                 Self::Invalid
             }
         }

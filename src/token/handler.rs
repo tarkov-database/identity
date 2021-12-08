@@ -16,9 +16,9 @@ use axum::extract::Extension;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::{encode, EncodingKey};
-use log::error;
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,8 +38,6 @@ pub async fn get(
         Ok(v) => v,
         Err(_) => return Err(ClientError::InvalidId.into()),
     };
-
-    dbg!("test!");
 
     let client = db.get_client(doc! { "_id": client_id }).await?;
     let svc = db.get_service(doc! { "_id": client.service }).await?;
