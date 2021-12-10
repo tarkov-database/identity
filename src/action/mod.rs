@@ -2,25 +2,15 @@ mod handler;
 mod routes;
 
 use crate::{
-    authentication::{
-        token::{TokenConfig, TokenError},
-        AuthenticationError,
-    },
-    error::{self, Error},
-    mail,
+    authentication::token::{TokenClaims, TokenConfig, TokenType},
+    error, mail,
     model::Status,
 };
 
 use std::collections::HashMap;
 
-use axum::{
-    async_trait,
-    extract::{Extension, FromRequest, RequestParts, TypedHeader},
-};
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
-use headers::{authorization::Bearer, Authorization};
 use hyper::StatusCode;
-use jsonwebtoken::encode;
 use serde::{Deserialize, Serialize};
 
 pub use routes::routes;
@@ -77,6 +67,7 @@ pub struct ActionClaims {
     pub sub: String,
     pub email: Option<String>,
     pub r#type: ActionType,
+    token_type: TokenType,
 }
 
 impl ActionClaims {
@@ -91,6 +82,7 @@ impl ActionClaims {
             sub: sub.into(),
             email: None,
             r#type,
+            token_type: Self::TOKEN_TYPE,
         }
     }
 
@@ -105,29 +97,11 @@ impl ActionClaims {
     }
 }
 
-#[async_trait]
-impl<B> FromRequest<B> for ActionClaims
-where
-    B: Send,
-{
-    type Rejection = Error;
+impl TokenClaims for ActionClaims {
+    const TOKEN_TYPE: TokenType = TokenType::Action;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(config) = Extension::<TokenConfig>::from_request(req)
-            .await
-            .expect("token config missing");
-
-        let TypedHeader(Authorization(bearer)) =
-            TypedHeader::<Authorization<Bearer>>::from_request(req)
-                .await
-                .map_err(|_| {
-                    AuthenticationError::InvalidHeader("authorization header missing".to_string())
-                })?;
-
-        let token_data = jsonwebtoken::decode(bearer.token(), &config.dec_key, &config.validation)
-            .map_err(|e| AuthenticationError::from(TokenError::from(e)))?;
-
-        Ok(token_data.claims)
+    fn get_type(&self) -> &TokenType {
+        &self.token_type
     }
 }
 
@@ -137,11 +111,10 @@ pub async fn send_verification_mail(
     client: mail::Client,
     config: TokenConfig,
 ) -> crate::Result<()> {
-    let header = jsonwebtoken::Header::default();
-    let audience = config.validation.aud.unwrap();
+    let audience = config.validation.aud.clone().unwrap();
     let claims = ActionClaims::with_email(audience, user_id, addr);
 
-    let token = encode(&header, &claims, &config.enc_key).unwrap();
+    let token = claims.encode(&config)?;
 
     const TEMPLATE_NAME: &str = "identity.action.verify";
     const SUBJECT: &str = "Email verification required";
@@ -162,11 +135,10 @@ async fn send_reset_mail(
     client: mail::Client,
     config: TokenConfig,
 ) -> crate::Result<()> {
-    let header = jsonwebtoken::Header::default();
-    let audience = config.validation.aud.unwrap();
+    let audience = config.validation.aud.clone().unwrap();
     let claims = ActionClaims::new(audience, user_id, ActionType::Reset);
 
-    let token = encode(&header, &claims, &config.enc_key).unwrap();
+    let token = claims.encode(&config)?;
 
     const TEMPLATE_NAME: &str = "identity.action.reset";
     const SUBJECT: &str = "Password reset";

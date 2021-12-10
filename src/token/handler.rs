@@ -1,10 +1,10 @@
 use std::iter::FromIterator;
 
 use crate::{
-    authentication::token::TokenConfig,
+    authentication::token::{TokenClaims, TokenConfig},
     client::ClientError,
     database::Database,
-    extract::SizedJson,
+    extract::{SizedJson, TokenData},
     model::Response,
     session::{SessionClaims, SessionError},
     token::{ClientClaims, ServiceClaims, TokenError},
@@ -29,7 +29,7 @@ pub struct TokenResponse {
 }
 
 pub async fn get(
-    claims: ClientClaims,
+    TokenData(claims): TokenData<ClientClaims>,
     Extension(db): Extension<Database>,
     Extension(enc): Extension<Aead256>,
     Extension(config): Extension<TokenConfig>,
@@ -88,7 +88,7 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     SizedJson(body): SizedJson<CreateRequest>,
     Extension(db): Extension<Database>,
     Extension(config): Extension<TokenConfig>,
@@ -110,17 +110,10 @@ pub async fn create(
         return Err(SessionError::NotAllowed("client is locked".to_string()).into());
     }
 
-    let header = jsonwebtoken::Header::default();
-    let audience = config.validation.aud.unwrap();
+    let audience = config.validation.aud.clone().unwrap();
     let claims = ClientClaims::new(audience, &body.client, &claims.sub);
 
-    let token = match encode(&header, &claims, &config.enc_key) {
-        Ok(t) => t,
-        Err(e) => {
-            error!("Error while encoding client token: {:?}", e);
-            return Err(TokenError::Encoding.into());
-        }
-    };
+    let token = claims.encode(&config)?;
 
     let response = TokenResponse {
         token,

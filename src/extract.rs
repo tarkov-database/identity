@@ -1,4 +1,11 @@
-use crate::model::Status;
+use crate::{
+    authentication::{
+        token::{TokenClaims, TokenConfig, TokenError},
+        AuthenticationError,
+    },
+    error::Error,
+    model::Status,
+};
 
 use std::borrow::Cow;
 
@@ -6,11 +13,12 @@ use axum::{
     async_trait,
     extract::{
         rejection::{ContentLengthLimitRejection, JsonRejection, QueryRejection},
-        FromRequest, RequestParts,
+        Extension, FromRequest, RequestParts, TypedHeader,
     },
     response::IntoResponse,
     BoxError,
 };
+use headers::{authorization::Bearer, Authorization};
 use hyper::StatusCode;
 use serde::de::DeserializeOwned;
 
@@ -129,5 +137,41 @@ where
                 Err(Status::new(status, message))
             }
         }
+    }
+}
+
+pub struct TokenData<T>(pub T)
+where
+    T: TokenClaims;
+
+#[async_trait]
+impl<B, T> FromRequest<B> for TokenData<T>
+where
+    T: TokenClaims,
+    B: Send,
+{
+    type Rejection = Error;
+
+    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
+        let Extension(config) = Extension::<TokenConfig>::from_request(req)
+            .await
+            .expect("token config missing");
+
+        let TypedHeader(Authorization(bearer)) =
+            TypedHeader::<Authorization<Bearer>>::from_request(req)
+                .await
+                .map_err(|_| {
+                    AuthenticationError::InvalidHeader("authorization header missing".to_string())
+                })?;
+
+        let token_data =
+            jsonwebtoken::decode::<T>(bearer.token(), &config.dec_key, &config.validation)
+                .map_err(|e| AuthenticationError::from(TokenError::from(e)))?;
+
+        if token_data.claims.get_type() != &T::TOKEN_TYPE {
+            return Err(AuthenticationError::from(TokenError::WrongType).into());
+        }
+
+        Ok(Self(token_data.claims))
     }
 }

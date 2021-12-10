@@ -2,21 +2,13 @@ mod handler;
 mod routes;
 
 use crate::{
-    authentication::{
-        token::{TokenConfig, TokenError},
-        AuthenticationError,
-    },
-    error::{self, Error},
+    authentication::token::{TokenClaims, TokenType},
+    error,
     model::Status,
     user::Role,
 };
 
-use axum::{
-    async_trait,
-    extract::{Extension, FromRequest, RequestParts, TypedHeader},
-};
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
-use headers::{authorization::Bearer, Authorization};
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 
@@ -59,6 +51,7 @@ pub struct SessionClaims {
     pub sub: String,
     #[serde(default)]
     pub scope: Vec<Scope>,
+    token_type: TokenType,
 }
 
 impl SessionClaims {
@@ -74,6 +67,7 @@ impl SessionClaims {
             iat: Utc::now(),
             sub: sub.into(),
             scope: Vec::default(),
+            token_type: Self::TOKEN_TYPE,
         }
     }
 
@@ -86,6 +80,14 @@ impl SessionClaims {
         claims.scope = scope.into_iter().collect();
 
         claims
+    }
+}
+
+impl TokenClaims for SessionClaims {
+    const TOKEN_TYPE: TokenType = TokenType::Session;
+
+    fn get_type(&self) -> &TokenType {
+        &self.token_type
     }
 }
 
@@ -130,31 +132,5 @@ impl From<Role> for Vec<Scope> {
             Role::ServiceEditor => vec![Scope::ServiceRead, Scope::ServiceWrite],
             Role::ServiceViewer => vec![Scope::ServiceRead],
         }
-    }
-}
-
-#[async_trait]
-impl<B> FromRequest<B> for SessionClaims
-where
-    B: Send,
-{
-    type Rejection = Error;
-
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(config) = Extension::<TokenConfig>::from_request(req)
-            .await
-            .expect("token config missing");
-
-        let TypedHeader(Authorization(bearer)) =
-            TypedHeader::<Authorization<Bearer>>::from_request(req)
-                .await
-                .map_err(|_| {
-                    AuthenticationError::InvalidHeader("authorization header missing".to_string())
-                })?;
-
-        let token_data = jsonwebtoken::decode(bearer.token(), &config.dec_key, &config.validation)
-            .map_err(|e| AuthenticationError::from(TokenError::from(e)))?;
-
-        Ok(token_data.claims)
     }
 }

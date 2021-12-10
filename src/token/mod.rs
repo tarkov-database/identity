@@ -2,20 +2,12 @@ mod handler;
 mod routes;
 
 use crate::{
-    authentication::{
-        token::{TokenConfig, TokenError as AuthTokenError},
-        AuthenticationError,
-    },
-    error::{self, Error},
+    authentication::token::{TokenClaims, TokenType},
+    error,
     model::Status,
 };
 
-use axum::{
-    async_trait,
-    extract::{Extension, FromRequest, RequestParts, TypedHeader},
-};
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
-use headers::{authorization::Bearer, Authorization};
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 
@@ -49,9 +41,12 @@ pub struct ClientClaims {
     pub iat: DateTime<Utc>,
     pub sub: String,
     pub iss: String,
+    token_type: TokenType,
 }
 
 impl ClientClaims {
+    pub const TOKEN_TYPE: TokenType = TokenType::Client;
+
     pub const DEFAULT_EXP_DAYS: i64 = 365;
 
     fn new<A>(aud: A, sub: &str, iss: &str) -> Self
@@ -64,33 +59,16 @@ impl ClientClaims {
             iat: Utc::now(),
             sub: sub.into(),
             iss: iss.into(),
+            token_type: Self::TOKEN_TYPE,
         }
     }
 }
 
-#[async_trait]
-impl<B> FromRequest<B> for ClientClaims
-where
-    B: Send,
-{
-    type Rejection = Error;
+impl TokenClaims for ClientClaims {
+    const TOKEN_TYPE: TokenType = TokenType::Client;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(config) = Extension::<TokenConfig>::from_request(req)
-            .await
-            .expect("token config missing");
-
-        let TypedHeader(Authorization(bearer)) =
-            TypedHeader::<Authorization<Bearer>>::from_request(req)
-                .await
-                .map_err(|_| {
-                    AuthenticationError::InvalidHeader("authorization header missing".to_string())
-                })?;
-
-        let token_data = jsonwebtoken::decode(bearer.token(), &config.dec_key, &config.validation)
-            .map_err(|e| AuthenticationError::from(AuthTokenError::from(e)))?;
-
-        Ok(token_data.claims)
+    fn get_type(&self) -> &TokenType {
+        &self.token_type
     }
 }
 

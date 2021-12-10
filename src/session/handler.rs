@@ -1,5 +1,8 @@
 use crate::{
-    authentication::{password, token::TokenConfig},
+    authentication::{
+        password,
+        token::{TokenClaims, TokenConfig},
+    },
     database::Database,
     error::Error,
     extract::SizedJson,
@@ -11,10 +14,8 @@ use crate::{
 use axum::extract::Extension;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
-use jsonwebtoken::encode;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,18 +60,11 @@ pub async fn create(
         return Err(SessionError::BadCredentials.into());
     }
 
-    let header = jsonwebtoken::Header::default();
-    let audience = config.validation.aud.unwrap();
+    let audience = config.validation.aud.clone().unwrap();
     let scope = Scope::from_roles(user.roles);
     let claims = SessionClaims::with_scope(audience, &user.id.to_hex(), scope);
 
-    let token = match encode(&header, &claims, &config.enc_key) {
-        Ok(t) => t,
-        Err(e) => {
-            error!("Error while encoding session token: {:?}", e);
-            return Err(SessionError::Encoding.into());
-        }
-    };
+    let token = claims.encode(&config)?;
 
     let response = SessionResponse {
         user: user.id.to_hex(),

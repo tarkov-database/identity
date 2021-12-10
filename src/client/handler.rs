@@ -2,7 +2,7 @@ use crate::{
     authentication::AuthenticationError,
     database::Database,
     error::QueryError,
-    extract::{Query, SizedJson},
+    extract::{Query, SizedJson, TokenData},
     model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
     user::UserError,
@@ -58,7 +58,7 @@ pub struct Filter {
 }
 
 pub async fn list(
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
     Extension(db): Extension<Database>,
@@ -85,7 +85,7 @@ pub async fn list(
 
 pub async fn get_by_id(
     Path(id): Path<String>,
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Response<ClientResponse>> {
     let id = match ObjectId::parse_str(&id) {
@@ -114,7 +114,7 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     SizedJson(body): SizedJson<CreateRequest>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Response<ClientResponse>> {
@@ -164,7 +164,7 @@ pub struct UpdateRequest {
 
 pub async fn update(
     Path(id): Path<String>,
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     SizedJson(body): SizedJson<UpdateRequest>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Response<ClientResponse>> {
@@ -209,7 +209,7 @@ pub async fn update(
 
 pub async fn delete(
     Path(id): Path<String>,
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&session::Scope::ClientWrite) {

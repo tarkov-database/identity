@@ -2,7 +2,7 @@ use crate::{
     action::{send_reset_mail, ActionType},
     authentication::{password, token::TokenConfig},
     database::Database,
-    extract::{Query, SizedJson},
+    extract::{Query, SizedJson, TokenData},
     mail,
     model::Status,
 };
@@ -15,7 +15,7 @@ use mongodb::bson::{doc, oid::ObjectId};
 use serde::Deserialize;
 
 pub async fn verify_email(
-    claims: ActionClaims,
+    TokenData(claims): TokenData<ActionClaims>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Status> {
     if claims.r#type != ActionType::Verify {
@@ -72,7 +72,7 @@ pub struct ResetRequest {
 }
 
 pub async fn reset_password(
-    claims: ActionClaims,
+    TokenData(claims): TokenData<ActionClaims>,
     SizedJson(body): SizedJson<ResetRequest>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Status> {

@@ -3,7 +3,7 @@ use crate::{
     authentication::{password, token::TokenConfig, AuthenticationError},
     database::Database,
     error::QueryError,
-    extract::{Query, SizedJson},
+    extract::{Query, SizedJson, TokenData},
     mail,
     model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
@@ -55,7 +55,7 @@ pub struct Filter {
 }
 
 pub async fn list(
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
     Extension(db): Extension<Database>,
@@ -75,7 +75,7 @@ pub async fn list(
 
 pub async fn get_by_id(
     Path(id): Path<String>,
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserRead) && claims.sub != id {
@@ -142,7 +142,7 @@ pub struct UpdateRequest {
 
 pub async fn update(
     Path(id): Path<String>,
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     SizedJson(body): SizedJson<UpdateRequest>,
     Extension(db): Extension<Database>,
     Extension(mail): Extension<mail::Client>,
@@ -188,7 +188,7 @@ pub async fn update(
 
 pub async fn delete(
     Path(id): Path<String>,
-    claims: SessionClaims,
+    TokenData(claims): TokenData<SessionClaims>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&session::Scope::UserWrite) {

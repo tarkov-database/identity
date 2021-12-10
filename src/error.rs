@@ -1,6 +1,12 @@
 use crate::{
-    action::ActionError, authentication::AuthenticationError, client::ClientError, model::Status,
-    service::ServiceError, session::SessionError, token::TokenError, user::UserError,
+    action::ActionError,
+    authentication::{token::TokenError as AuthTokenError, AuthenticationError},
+    client::ClientError,
+    model::Status,
+    service::ServiceError,
+    session::SessionError,
+    token::TokenError,
+    user::UserError,
 };
 
 use hyper::StatusCode;
@@ -11,6 +17,8 @@ use tracing::error;
 pub enum Error {
     #[error("query error: {0}")]
     Query(#[from] QueryError),
+    #[error("authentication token error: {0}")]
+    AuthToken(#[from] AuthTokenError),
     #[error("authentication error: {0}")]
     Auth(#[from] AuthenticationError),
     #[error("user error: {0}")]
@@ -46,6 +54,7 @@ impl axum::response::IntoResponse for Error {
             Error::Service(e) => e.error_response(),
             Error::Action(e) => e.error_response(),
             Error::Token(e) => e.error_response(),
+            Error::AuthToken(e) => e.error_response(),
             Error::Database(e) => {
                 error!("database error: {:?}", e);
                 Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")

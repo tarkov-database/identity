@@ -1,8 +1,11 @@
+use crate::{error, model::Status};
+
+use hyper::StatusCode;
 use jsonwebtoken::{
     errors::{Error as JwtError, ErrorKind},
-    DecodingKey, EncodingKey, Validation,
+    Algorithm, DecodingKey, EncodingKey, Validation,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
@@ -11,8 +14,12 @@ pub enum TokenError {
     Expired,
     #[error("token is not yet valid")]
     Immature,
+    #[error("token has wrong type")]
+    WrongType,
     #[error("token is invalid")]
     Invalid,
+    #[error("Token could not be encoded: {0}")]
+    EncodingFailed(JwtError),
 }
 
 impl From<JwtError> for TokenError {
@@ -28,21 +35,57 @@ impl From<JwtError> for TokenError {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl error::ErrorResponse for TokenError {
+    type Response = Status;
+
+    fn status_code(&self) -> StatusCode {
+        match self {
+            TokenError::Expired => StatusCode::UNAUTHORIZED,
+            TokenError::Immature => StatusCode::UNAUTHORIZED,
+            TokenError::WrongType => StatusCode::UNAUTHORIZED,
+            TokenError::Invalid => StatusCode::UNAUTHORIZED,
+            TokenError::EncodingFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    fn error_response(&self) -> Self::Response {
+        Status::new(self.status_code(), self.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TokenType {
     Session,
     Client,
-    Service,
     Action,
+}
+
+pub trait TokenClaims
+where
+    Self: Serialize + DeserializeOwned + Sized,
+{
+    const TOKEN_TYPE: TokenType;
+
+    fn get_type(&self) -> &TokenType;
+
+    fn encode(&self, config: &TokenConfig) -> Result<String, TokenError> {
+        let header = jsonwebtoken::Header::new(config.alg);
+        let token = jsonwebtoken::encode(&header, self, &config.enc_key).map_err(|e| {
+            error!("Error while encoding token: {:?}", e);
+            TokenError::EncodingFailed(e)
+        })?;
+
+        Ok(token)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct TokenConfig {
+    pub alg: Algorithm,
     pub enc_key: EncodingKey,
     pub dec_key: DecodingKey<'static>,
     pub validation: Validation,
-    pub r#type: Option<TokenType>,
 }
 
 impl TokenConfig {
@@ -61,14 +104,10 @@ impl TokenConfig {
         validation.set_audience(audience.as_ref());
 
         Self {
+            alg: Algorithm::HS256,
             enc_key: EncodingKey::from_secret(secret.as_ref()),
             dec_key: DecodingKey::from_secret(secret.as_ref()).into_static(),
             validation,
-            r#type: None,
         }
-    }
-
-    pub fn set_type(&mut self, r#type: Option<TokenType>) {
-        self.r#type = r#type;
     }
 }
