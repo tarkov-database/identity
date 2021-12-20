@@ -28,12 +28,16 @@ tower-http = { version = "0.2.0", features = [
     "sensitive-headers",
 ] }
 axum = { version = "0.4", features = ["headers"] }
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = [
+    "json",
+    "trust-dns",
+    "native-tls",
+], default-features = false }
 headers = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
-mongodb = { version = "2.1.0-beta", features = ["bson-chrono-0_4"] }
+mongodb = { version = "2.1.0", features = ["bson-chrono-0_4"] }
 futures = { version = "0.3", default-features = false, features = [
     "async-await",
 ] }
@@ -46,6 +50,7 @@ passwords = "3"
 envy = "0.4"
 dotenv = "0.15"
 tracing = "0.1"
+tracing-futures = { version = "0.2", features = ["futures-03"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "1"
 

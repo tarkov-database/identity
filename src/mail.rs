@@ -56,10 +56,12 @@ impl Client {
         concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
     const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+    const KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(60);
 
     pub fn new<S: AsRef<str>>(api_key: S, region: Region, domain: S, from: S) -> Result<Self> {
         let client = reqwest::Client::builder()
             .https_only(true)
+            .tcp_keepalive(Self::KEEP_ALIVE_TIMEOUT)
             .timeout(Self::DEFAULT_TIMEOUT)
             .user_agent(Self::USER_AGENT)
             .build()?;
