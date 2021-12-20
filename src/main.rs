@@ -143,9 +143,15 @@ async fn main() -> Result<()> {
 
     let addr = SocketAddr::from((app_config.server_addr, app_config.server_port));
     tracing::debug!("listening on {}", addr);
-    Server::bind(&addr)
-        .serve(routes.into_make_service())
-        .await?;
+    let server = Server::bind(&addr).serve(routes.into_make_service());
+
+    let signal_tx = utils::shutdown_signal(1);
+    let mut signal_rx = signal_tx.subscribe();
+    let server = server.with_graceful_shutdown(async move {
+        signal_rx.recv().await.ok();
+    });
+
+    server.await?;
 
     Ok(())
 }
