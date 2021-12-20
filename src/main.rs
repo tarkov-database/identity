@@ -27,7 +27,7 @@ use std::{
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::AUTHORIZATION;
-use mongodb::options::ClientOptions;
+use mongodb::options::{ClientOptions, Tls, TlsOptions};
 use serde::Deserialize;
 use tower::ServiceBuilder;
 use tower_http::{
@@ -64,8 +64,8 @@ struct AppConfig {
     mongo_db: String,
     #[serde(default)]
     mongo_tls: bool,
-    mongo_cert: Option<PathBuf>,
-    mongo_key: Option<PathBuf>,
+    mongo_cert_key: Option<PathBuf>,
+    mongo_ca: Option<PathBuf>,
 
     // Email client
     mail_from: String,
@@ -96,7 +96,15 @@ async fn main() -> Result<()> {
         prefix.from_env()?
     };
 
-    let mongo_opts = ClientOptions::parse(app_config.mongo_uri).await?;
+    let mut mongo_opts = ClientOptions::parse(app_config.mongo_uri).await?;
+
+    if app_config.mongo_tls {
+        let opts = TlsOptions::builder()
+            .cert_key_file_path(app_config.mongo_cert_key)
+            .ca_file_path(app_config.mongo_ca);
+
+        mongo_opts.tls = Some(Tls::Enabled(opts.build()));
+    }
 
     let db = Database::new(mongo_opts, &app_config.mongo_db)?;
     let token_config =
