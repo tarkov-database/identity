@@ -114,6 +114,7 @@ async fn main() -> Result<()> {
         .load_shed()
         .concurrency_limit(1024)
         .timeout(Duration::from_secs(60))
+        .layer(SetSensitiveHeadersLayer::new(once(AUTHORIZATION)))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::new().include_headers(true))
@@ -126,8 +127,7 @@ async fn main() -> Result<()> {
         .layer(AddExtensionLayer::new(db))
         .layer(AddExtensionLayer::new(token_config))
         .layer(AddExtensionLayer::new(aead))
-        .layer(AddExtensionLayer::new(mail))
-        .layer(SetSensitiveHeadersLayer::new(once(AUTHORIZATION)));
+        .layer(AddExtensionLayer::new(mail));
 
     let svc_routes = Router::new()
         .nest("/user", user::routes())
