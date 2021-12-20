@@ -75,10 +75,7 @@ pub async fn get_by_id(
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
-    let id = match ObjectId::parse_str(&id) {
-        Ok(v) => v,
-        Err(_) => return Err(ServiceError::InvalidId.into()),
-    };
+    let id = ObjectId::parse_str(&id).map_err(|_| ServiceError::InvalidId)?;
 
     let service = db.get_service(doc! { "_id": id }).await?;
 
@@ -147,10 +144,7 @@ pub async fn update(
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
-    let id = match ObjectId::parse_str(&id) {
-        Ok(v) => v,
-        Err(_) => return Err(ServiceError::InvalidId.into()),
-    };
+    let id = ObjectId::parse_str(&id).map_err(|_| ServiceError::InvalidId)?;
 
     let svc = db.get_service(doc! { "_id": id }).await?;
 
@@ -203,10 +197,7 @@ pub async fn delete(
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
-    let id = match ObjectId::parse_str(&id) {
-        Ok(v) => v,
-        Err(_) => return Err(ServiceError::InvalidId.into()),
-    };
+    let id = ObjectId::parse_str(&id).map_err(|_| ServiceError::InvalidId)?;
 
     db.delete_service(id).await?;
 

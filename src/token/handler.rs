@@ -34,10 +34,7 @@ pub async fn get(
     Extension(enc): Extension<Aead256>,
     Extension(config): Extension<TokenConfig>,
 ) -> crate::Result<Response<TokenResponse>> {
-    let client_id = match ObjectId::parse_str(&claims.sub) {
-        Ok(v) => v,
-        Err(_) => return Err(ClientError::InvalidId.into()),
-    };
+    let client_id = ObjectId::parse_str(&claims.sub).map_err(|_| ClientError::InvalidId)?;
 
     let client = db.get_client(doc! { "_id": client_id }).await?;
     let svc = db.get_service(doc! { "_id": client.service }).await?;
@@ -93,14 +90,8 @@ pub async fn create(
     Extension(db): Extension<Database>,
     Extension(config): Extension<TokenConfig>,
 ) -> crate::Result<Response<TokenResponse>> {
-    let client_id = match ObjectId::parse_str(&body.client) {
-        Ok(v) => v,
-        Err(_) => return Err(ClientError::InvalidId.into()),
-    };
-    let user_id = match ObjectId::parse_str(&claims.sub) {
-        Ok(v) => v,
-        Err(_) => return Err(UserError::InvalidId.into()),
-    };
+    let client_id = ObjectId::parse_str(&claims.sub).map_err(|_| ClientError::InvalidId)?;
+    let user_id = ObjectId::parse_str(&claims.sub).map_err(|_| UserError::InvalidId)?;
 
     let client = db
         .get_client(doc! {"_id": client_id, "user": user_id })

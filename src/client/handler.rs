@@ -88,10 +88,7 @@ pub async fn get_by_id(
     TokenData(claims): TokenData<SessionClaims>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Response<ClientResponse>> {
-    let id = match ObjectId::parse_str(&id) {
-        Ok(v) => v,
-        Err(_) => return Err(ClientError::InvalidId.into()),
-    };
+    let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
     let mut filter = doc! { "_id": id };
     if !claims.scope.contains(&session::Scope::ClientRead) {
@@ -122,10 +119,7 @@ pub async fn create(
         if !claims.scope.contains(&session::Scope::ClientWrite) && claims.sub != id {
             return Err(AuthenticationError::InsufficientPermission.into());
         }
-        match ObjectId::parse_str(&id) {
-            Ok(v) => v,
-            Err(_) => return Err(UserError::InvalidId.into()),
-        }
+        ObjectId::parse_str(&id).map_err(|_| UserError::InvalidId)?
     } else {
         ObjectId::parse_str(&claims.sub).unwrap()
     };
@@ -168,18 +162,12 @@ pub async fn update(
     SizedJson(body): SizedJson<UpdateRequest>,
     Extension(db): Extension<Database>,
 ) -> crate::Result<Response<ClientResponse>> {
-    let id = match ObjectId::parse_str(&id) {
-        Ok(v) => v,
-        Err(_) => return Err(ClientError::InvalidId.into()),
-    };
+    let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
     let mut doc = Document::new();
     if claims.scope.contains(&session::Scope::ClientWrite) {
         if let Some(v) = body.user {
-            let id = match ObjectId::parse_str(&v) {
-                Ok(v) => v,
-                Err(_) => return Err(UserError::InvalidId.into()),
-            };
+            let id = ObjectId::parse_str(&v).map_err(|_| UserError::InvalidId)?;
             doc.insert("user", id);
         }
         if let Some(v) = body.unlocked {
@@ -216,10 +204,7 @@ pub async fn delete(
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
-    let id = match ObjectId::parse_str(&id) {
-        Ok(v) => v,
-        Err(_) => return Err(ClientError::InvalidId.into()),
-    };
+    let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
     db.delete_client(id).await?;
 

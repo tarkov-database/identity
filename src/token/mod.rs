@@ -45,8 +45,6 @@ pub struct ClientClaims {
 }
 
 impl ClientClaims {
-    pub const TOKEN_TYPE: TokenType = TokenType::Client;
-
     pub const DEFAULT_EXP_DAYS: i64 = 365;
 
     fn new<A>(aud: A, sub: &str, iss: &str) -> Self
