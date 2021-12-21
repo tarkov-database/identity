@@ -124,10 +124,7 @@ pub async fn create(
         ObjectId::parse_str(&claims.sub).unwrap()
     };
 
-    let svc_id = match ObjectId::parse_str(&body.service) {
-        Ok(v) => v,
-        Err(_) => return Err(UserError::InvalidId.into()),
-    };
+    let svc_id = ObjectId::parse_str(&body.service).map_err(|_| UserError::InvalidId)?;
 
     let svc = db.get_service(doc! { "_id": svc_id }).await?;
 

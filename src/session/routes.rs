@@ -4,5 +4,5 @@ use axum::routing::post;
 
 /// Session routes
 pub fn routes() -> axum::Router {
-    axum::Router::new().route("/", post(handler::create))
+    axum::Router::new().route("/", post(handler::create).get(handler::refresh))
 }

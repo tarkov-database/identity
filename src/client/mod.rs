@@ -26,6 +26,8 @@ pub enum ClientError {
     NotFound,
     #[error("client id is invalid")]
     InvalidId,
+    #[error("client is locked")]
+    Locked,
 }
 
 impl error::ErrorResponse for ClientError {
@@ -35,6 +37,7 @@ impl error::ErrorResponse for ClientError {
         match self {
             ClientError::NotFound => StatusCode::NOT_FOUND,
             ClientError::InvalidId => StatusCode::BAD_REQUEST,
+            ClientError::Locked => StatusCode::FORBIDDEN,
         }
     }
 

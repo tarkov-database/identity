@@ -1,11 +1,14 @@
 use crate::{
-    authentication::token::{TokenClaims, TokenConfig},
+    authentication::{
+        self,
+        token::{TokenClaims, TokenConfig},
+    },
     client::ClientError,
     database::Database,
     extract::{SizedJson, TokenData},
     model::Response,
-    session::{SessionClaims, SessionError},
-    token::{ClientClaims, ServiceClaims, TokenError},
+    session::SessionClaims,
+    token::{ClientClaims, ServiceClaims},
     user::UserError,
     utils::crypto::Aead256,
 };
@@ -40,7 +43,7 @@ pub async fn get(
     let svc = db.get_service(doc! { "_id": client.service }).await?;
 
     if !client.unlocked {
-        return Err(SessionError::NotAllowed("client is locked".to_string()).into());
+        return Err(ClientError::Locked.into());
     }
 
     let header = jsonwebtoken::Header::default();
@@ -60,13 +63,7 @@ pub async fn get(
 
     let claims = ServiceClaims::with_scope(audience, &claims.sub, client.scope);
 
-    let token = match encode(&header, &claims, &key) {
-        Ok(t) => t,
-        Err(e) => {
-            error!("Error while encoding service token: {:?}", e);
-            return Err(TokenError::Encoding.into());
-        }
-    };
+    let token = encode(&header, &claims, &key).map_err(authentication::token::TokenError::from)?;
 
     let response = TokenResponse {
         token,
@@ -98,7 +95,7 @@ pub async fn create(
         .await?;
 
     if !client.unlocked {
-        return Err(SessionError::NotAllowed("client is locked".to_string()).into());
+        return Err(ClientError::Locked.into());
     }
 
     let audience = config.validation.aud.clone().unwrap();

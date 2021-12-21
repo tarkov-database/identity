@@ -5,16 +5,16 @@ use crate::{
     },
     database::Database,
     error::Error,
-    extract::SizedJson,
+    extract::{SizedJson, TokenData},
     model::Response,
     session::{Scope, SessionClaims, SessionError},
     user::UserError,
 };
 
 use axum::extract::Extension;
-use chrono::{serde::ts_seconds, DateTime, Utc};
+use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
-use mongodb::bson::doc;
+use mongodb::bson::{doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -50,10 +50,12 @@ pub async fn create(
     };
 
     if !user.verified {
-        return Err(SessionError::NotAllowed("user is not verified".to_string()).into());
+        return Err(SessionError::NotAuthorized("user is not verified".to_string()).into());
     }
     if !user.can_login {
-        return Err(SessionError::NotAllowed("user is not allowed to log in".to_string()).into());
+        return Err(
+            SessionError::NotAuthorized("user is not authorized to log in".to_string()).into(),
+        );
     }
 
     if password::verify_password(&body.password, &user.password).is_err() {
@@ -63,6 +65,40 @@ pub async fn create(
     let audience = config.validation.aud.clone().unwrap();
     let scope = Scope::from_roles(user.roles);
     let claims = SessionClaims::with_scope(audience, &user.id.to_hex(), scope);
+
+    let token = claims.encode(&config)?;
+
+    let response = SessionResponse {
+        user: user.id.to_hex(),
+        token,
+        expires_at: claims.exp,
+    };
+
+    db.set_user_session(user.id).await?;
+
+    Ok(Response::with_status(StatusCode::CREATED, response))
+}
+
+pub async fn refresh(
+    TokenData(claims): TokenData<SessionClaims>,
+    Extension(db): Extension<Database>,
+    Extension(config): Extension<TokenConfig>,
+) -> crate::Result<Response<SessionResponse>> {
+    let user_id = ObjectId::parse_str(&claims.sub).unwrap();
+
+    let user = db.get_user(doc! {"_id": user_id }).await?;
+
+    if !user.verified {
+        return Err(SessionError::NotAuthorized("user is not verified".to_string()).into());
+    }
+    if !user.can_login {
+        return Err(
+            SessionError::NotAuthorized("user is not authorized to log in".to_string()).into(),
+        );
+    }
+
+    let mut claims = claims;
+    claims.set_expiration(Utc::now() + Duration::minutes(SessionClaims::DEFAULT_EXP_MIN));
 
     let token = claims.encode(&config)?;
 

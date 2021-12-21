@@ -18,10 +18,10 @@ pub use routes::routes;
 pub enum SessionError {
     #[error("credentials are wrong")]
     BadCredentials,
-    #[error("not allowed: {0}")]
-    NotAllowed(String),
-    #[error("token encoding failed")]
-    Encoding,
+    #[error("not authorized: {0}")]
+    NotAuthorized(String),
+    #[error("login is required")]
+    LoginRequired,
 }
 
 impl error::ErrorResponse for SessionError {
@@ -29,9 +29,8 @@ impl error::ErrorResponse for SessionError {
 
     fn status_code(&self) -> StatusCode {
         match self {
-            SessionError::BadCredentials => StatusCode::UNAUTHORIZED,
-            SessionError::NotAllowed(_) => StatusCode::FORBIDDEN,
-            SessionError::Encoding => StatusCode::INTERNAL_SERVER_ERROR,
+            SessionError::BadCredentials | SessionError::LoginRequired => StatusCode::UNAUTHORIZED,
+            SessionError::NotAuthorized(_) => StatusCode::FORBIDDEN,
         }
     }
 
@@ -80,6 +79,10 @@ impl SessionClaims {
         claims.scope = scope.into_iter().collect();
 
         claims
+    }
+
+    pub fn set_expiration(&mut self, date: DateTime<Utc>) {
+        self.exp = date;
     }
 }
 

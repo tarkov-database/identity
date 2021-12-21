@@ -14,10 +14,7 @@ use serde::{Deserialize, Serialize};
 pub use routes::routes;
 
 #[derive(Debug, thiserror::Error)]
-pub enum TokenError {
-    #[error("token encoding failed")]
-    Encoding,
-}
+pub enum TokenError {}
 
 impl error::ErrorResponse for TokenError {
     type Response = Status;
