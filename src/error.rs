@@ -33,13 +33,13 @@ pub enum Error {
     Action(#[from] ActionError),
     #[error("action error: {0}")]
     Token(#[from] TokenError),
-    #[error("action error: {0}")]
+    #[error("token error: {0}")]
     Database(#[from] mongodb::error::Error),
     #[error("Envy error: {0}")]
     Envy(#[from] envy::Error),
-    #[error("reqwest error: {0}")]
+    #[error("Reqwest error: {0}")]
     Http(#[from] reqwest::Error),
-    #[error("hyper error: {0}")]
+    #[error("Hyper error: {0}")]
     Hyper(#[from] hyper::Error),
 }
 
@@ -56,15 +56,15 @@ impl axum::response::IntoResponse for Error {
             Error::Token(e) => e.error_response(),
             Error::AuthToken(e) => e.error_response(),
             Error::Database(e) => {
-                error!("database error: {:?}", e);
+                error!(error = %e, "Database error");
                 Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
             }
             Error::Http(e) => {
-                error!("http client error: {:?}", e);
+                error!(error = %e, "HTTP client error");
                 Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
             }
             Error::Hyper(e) => {
-                error!("hyper error: {:?}", e);
+                error!(error = %e, "Hyper error");
                 Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
             }
             Error::Envy(_) => unreachable!(),
@@ -106,7 +106,7 @@ pub async fn handle_error(error: BoxError) -> Status {
         );
     }
 
-    error!("internal error: {:?}", error);
+    error!(error = %error, "internal error");
     Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
 }
 
