@@ -7,7 +7,7 @@ use crate::{
     model::Status,
 };
 
-use std::borrow::Cow;
+use std::{borrow::Cow, net};
 
 use axum::{
     async_trait,
@@ -23,6 +23,9 @@ use hyper::StatusCode;
 use serde::de::DeserializeOwned;
 
 const CONTENT_LENGTH_LIMIT: u64 = 2048;
+
+const X_FORWARDED_FOR: &str = "X-Forwarded-For";
+const CF_CONNECTING_IP: &str = "CF-Connecting-IP";
 
 /// JSON extractor with content length limit and custom error response
 pub struct SizedJson<T>(pub T);
@@ -173,5 +176,87 @@ where
         }
 
         Ok(Self(token_data.claims))
+    }
+}
+
+pub struct RemoteAddr(pub net::IpAddr);
+
+#[async_trait]
+impl<B> FromRequest<B> for RemoteAddr
+where
+    B: Send,
+{
+    type Rejection = Status;
+
+    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
+        let header = match req.headers() {
+            Some(v) if v.contains_key(CF_CONNECTING_IP) => Some((
+                CF_CONNECTING_IP,
+                v.get(CF_CONNECTING_IP).unwrap().to_str().map_err(|_| {
+                    Status::new(
+                        StatusCode::BAD_REQUEST,
+                        format!(
+                            "Header \"{}\" contains invalid characters",
+                            CF_CONNECTING_IP
+                        ),
+                    )
+                })?,
+            )),
+            Some(v) if v.contains_key(X_FORWARDED_FOR) => Some((
+                X_FORWARDED_FOR,
+                v.get(X_FORWARDED_FOR)
+                    .unwrap()
+                    .to_str()
+                    .map_err(|_| {
+                        Status::new(
+                            StatusCode::BAD_REQUEST,
+                            format!("Header \"{}\" contains invalid characters", X_FORWARDED_FOR),
+                        )
+                    })?
+                    .split(',')
+                    .next()
+                    .ok_or_else(|| {
+                        Status::new(
+                            StatusCode::BAD_REQUEST,
+                            format!("Header \"{}\" is invalid", X_FORWARDED_FOR),
+                        )
+                    })?,
+            )),
+            None => {
+                return Err(Status::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal error",
+                ));
+            }
+            _ => None,
+        };
+
+        if let Some((name, value)) = header {
+            let addr = value.trim().parse::<net::IpAddr>().map_err(|_| {
+                Status::new(
+                    StatusCode::BAD_REQUEST,
+                    format!("Header \"{}\" contains a malformed IP address", name),
+                )
+            })?;
+
+            if addr.is_unspecified() {
+                return Err(Status::new(
+                    StatusCode::BAD_REQUEST,
+                    format!("Header \"{}\" contains an unspecified IP address", name),
+                ));
+            }
+
+            return Ok(Self(addr));
+        };
+
+        match axum::extract::connect_info::ConnectInfo::<net::SocketAddr>::from_request(req).await {
+            Ok(v) => Ok(Self(v.0.ip())),
+            Err(_) => {
+                return Err(Status::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal error",
+                ));
+            }
+        }
     }
 }
