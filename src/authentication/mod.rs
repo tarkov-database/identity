@@ -1,9 +1,9 @@
 pub mod password;
 pub mod token;
 
-use hyper::StatusCode;
-
 use crate::{error, model::Status};
+
+use hyper::StatusCode;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthenticationError {

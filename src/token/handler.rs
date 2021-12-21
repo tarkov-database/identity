@@ -1,5 +1,3 @@
-use std::iter::FromIterator;
-
 use crate::{
     authentication::token::{TokenClaims, TokenConfig},
     client::ClientError,
@@ -11,6 +9,8 @@ use crate::{
     user::UserError,
     utils::crypto::Aead256,
 };
+
+use std::iter::FromIterator;
 
 use axum::extract::Extension;
 use chrono::{serde::ts_seconds, DateTime, Utc};

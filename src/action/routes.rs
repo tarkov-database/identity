@@ -1,6 +1,6 @@
-use axum::routing::get;
-
 use super::handler;
+
+use axum::routing::get;
 
 /// Session routes
 pub fn routes() -> axum::Router {
