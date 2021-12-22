@@ -21,7 +21,7 @@ use hyper::StatusCode;
 use jsonwebtoken::{encode, EncodingKey};
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
-use tracing::error;
+
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

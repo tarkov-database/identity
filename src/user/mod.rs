@@ -27,6 +27,10 @@ pub enum UserError {
     AlreadyExists,
     #[error("user id is invalid")]
     InvalidId,
+    #[error("email address invalid")]
+    InvalidAddr,
+    #[error("email address not allowed")]
+    DomainNotAllowed,
 }
 
 impl error::ErrorResponse for UserError {
@@ -35,8 +39,10 @@ impl error::ErrorResponse for UserError {
     fn status_code(&self) -> StatusCode {
         match self {
             UserError::NotFound => StatusCode::NOT_FOUND,
-            UserError::AlreadyExists => StatusCode::BAD_REQUEST,
-            UserError::InvalidId => StatusCode::BAD_REQUEST,
+            UserError::AlreadyExists | UserError::InvalidAddr | UserError::InvalidId => {
+                StatusCode::BAD_REQUEST
+            }
+            UserError::DomainNotAllowed => StatusCode::UNPROCESSABLE_ENTITY,
         }
     }
 
@@ -119,7 +125,7 @@ impl Database {
         Ok(user.unwrap())
     }
 
-    async fn insert_user(&self, doc: &UserDocument) -> Result<()> {
+    pub async fn insert_user(&self, doc: &UserDocument) -> Result<()> {
         self.collection::<UserDocument>(COLLECTION)
             .insert_one(doc, None)
             .await?;

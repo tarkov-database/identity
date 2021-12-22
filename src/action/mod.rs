@@ -18,7 +18,7 @@ pub use routes::routes;
 #[derive(Debug, thiserror::Error)]
 pub enum ActionError {
     #[error("invalid token")]
-    Invalid,
+    InvalidToken,
     #[error("already verified")]
     AlreadyVerified,
     #[error("user not verified")]
@@ -30,7 +30,7 @@ impl error::ErrorResponse for ActionError {
 
     fn status_code(&self) -> StatusCode {
         match self {
-            ActionError::Invalid | ActionError::AlreadyVerified => StatusCode::BAD_REQUEST,
+            ActionError::InvalidToken | ActionError::AlreadyVerified => StatusCode::BAD_REQUEST,
             ActionError::NotVerified => StatusCode::FORBIDDEN,
         }
     }

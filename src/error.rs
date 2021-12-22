@@ -7,6 +7,7 @@ use crate::{
     session::SessionError,
     token::TokenError,
     user::UserError,
+    utils::crypto::CryptoError,
 };
 
 use hyper::StatusCode;
@@ -33,6 +34,8 @@ pub enum Error {
     Action(#[from] ActionError),
     #[error("action error: {0}")]
     Token(#[from] TokenError),
+    #[error("crypto error: {0}")]
+    Crypto(#[from] CryptoError),
     #[error("token error: {0}")]
     Database(#[from] mongodb::error::Error),
     #[error("Envy error: {0}")]
@@ -55,19 +58,10 @@ impl axum::response::IntoResponse for Error {
             Error::Action(e) => e.error_response(),
             Error::Token(e) => e.error_response(),
             Error::AuthToken(e) => e.error_response(),
-            Error::Database(e) => {
-                error!(error = %e, "Database error");
+            _ => {
+                error!(error = %self, "internal error");
                 Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
             }
-            Error::Http(e) => {
-                error!(error = %e, "HTTP client error");
-                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
-            }
-            Error::Hyper(e) => {
-                error!(error = %e, "Hyper error");
-                Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
-            }
-            Error::Envy(_) => unreachable!(),
         };
 
         res.into_response()

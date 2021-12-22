@@ -1,6 +1,7 @@
 mod action;
 mod authentication;
 mod client;
+mod config;
 mod database;
 mod error;
 mod extract;
@@ -13,22 +14,18 @@ mod user;
 mod utils;
 
 use crate::{
-    authentication::token::TokenConfig, database::Database, error::handle_error,
+    authentication::token::TokenConfig,
+    config::{AppConfig, GlobalConfig},
+    database::Database,
+    error::handle_error,
     utils::crypto::Aead256,
 };
 
-use std::{
-    env,
-    iter::once,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::PathBuf,
-    time::Duration,
-};
+use std::{env, iter::once, net::SocketAddr, time::Duration};
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::AUTHORIZATION;
 use mongodb::options::{ClientOptions, Tls, TlsOptions};
-use serde::Deserialize;
 use tower::ServiceBuilder;
 use tower_http::{
     add_extension::AddExtensionLayer,
@@ -42,44 +39,6 @@ use tower_http::{
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
-
-const fn default_addr() -> IpAddr {
-    IpAddr::V4(Ipv4Addr::LOCALHOST)
-}
-
-const fn default_port() -> u16 {
-    8080
-}
-
-#[derive(Debug, Deserialize)]
-struct AppConfig {
-    // HTTP server
-    #[serde(default = "default_addr")]
-    server_addr: IpAddr,
-    #[serde(default = "default_port")]
-    server_port: u16,
-
-    // MongoDB client
-    mongo_uri: String,
-    mongo_db: String,
-    #[serde(default)]
-    mongo_tls: bool,
-    mongo_cert_key: Option<PathBuf>,
-    mongo_ca: Option<PathBuf>,
-
-    // Email client
-    mail_from: String,
-    mg_region: mail::Region,
-    mg_domain: String,
-    mg_key: String,
-
-    // JWT
-    jwt_secret: String,
-    jwt_audience: Vec<String>,
-
-    // Crypto
-    crypto_key: String,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -109,13 +68,16 @@ async fn main() -> Result<()> {
     let db = Database::new(mongo_opts, &app_config.mongo_db)?;
     let token_config =
         TokenConfig::from_secret(app_config.jwt_secret.as_bytes(), app_config.jwt_audience);
-    let aead = Aead256::new(app_config.crypto_key).unwrap();
+    let aead = Aead256::new(app_config.crypto_key)?;
     let mail = mail::Client::new(
         app_config.mg_key,
         app_config.mg_region,
         app_config.mg_domain,
         app_config.mail_from,
     )?;
+    let global_config = GlobalConfig {
+        allowed_domains: app_config.allowed_domains,
+    };
 
     let middleware = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(handle_error))
@@ -132,6 +94,7 @@ async fn main() -> Result<()> {
                         .latency_unit(LatencyUnit::Micros),
                 ),
         )
+        .layer(AddExtensionLayer::new(global_config))
         .layer(AddExtensionLayer::new(db))
         .layer(AddExtensionLayer::new(token_config))
         .layer(AddExtensionLayer::new(aead))

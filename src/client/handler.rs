@@ -4,6 +4,7 @@ use crate::{
     error::QueryError,
     extract::{Query, SizedJson, TokenData},
     model::{List, ListOptions, Response, Status},
+    service::ServiceError,
     session::{self, SessionClaims},
     user::UserError,
 };
@@ -11,7 +12,7 @@ use crate::{
 use super::{ClientDocument, ClientError};
 
 use axum::extract::{Extension, Path};
-use chrono::{serde::ts_seconds, DateTime, NaiveDateTime, Utc};
+use chrono::{serde::ts_seconds, DateTime, TimeZone, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
 use serde::{Deserialize, Serialize};
@@ -124,7 +125,7 @@ pub async fn create(
         ObjectId::parse_str(&claims.sub).unwrap()
     };
 
-    let svc_id = ObjectId::parse_str(&body.service).map_err(|_| UserError::InvalidId)?;
+    let svc_id = ObjectId::parse_str(&body.service).map_err(|_| ServiceError::InvalidId)?;
 
     let svc = db.get_service(doc! { "_id": svc_id }).await?;
 
@@ -135,7 +136,7 @@ pub async fn create(
         service: svc_id,
         scope: svc.scope_default,
         unlocked: false,
-        last_issued: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+        last_issued: Utc.timestamp(0, 0),
         last_modified: Utc::now(),
     };
 

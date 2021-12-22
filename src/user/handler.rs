@@ -7,12 +7,13 @@ use crate::{
     mail,
     model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
+    utils, GlobalConfig,
 };
 
 use super::{Role, UserDocument, UserError};
 
 use axum::extract::{Extension, Path};
-use chrono::{serde::ts_seconds, DateTime, NaiveDateTime, Utc};
+use chrono::{serde::ts_seconds, DateTime, TimeZone, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_bson, to_document, Document};
 use serde::{Deserialize, Serialize};
@@ -99,11 +100,23 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
+    TokenData(claims): TokenData<SessionClaims>,
     SizedJson(body): SizedJson<CreateRequest>,
     Extension(db): Extension<Database>,
+    Extension(global): Extension<GlobalConfig>,
     Extension(mail): Extension<mail::Client>,
     Extension(config): Extension<TokenConfig>,
 ) -> crate::Result<Response<UserResponse>> {
+    if !claims.scope.contains(&session::Scope::UserWrite) {
+        return Err(AuthenticationError::InsufficientPermission.into());
+    }
+
+    let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
+
+    if !global.is_domain_allowed(domain) {
+        return Err(UserError::DomainNotAllowed.into());
+    }
+
     if db.get_user(doc! { "email": &body.email }).await.is_ok() {
         return Err(UserError::AlreadyExists.into());
     }
@@ -117,7 +130,7 @@ pub async fn create(
         roles: body.roles,
         verified: false,
         can_login: true,
-        last_session: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+        last_session: Utc.timestamp(0, 0),
         last_modified: Utc::now(),
     };
 
