@@ -20,10 +20,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionResponse {
-    user: String,
-    token: String,
+    pub user: String,
+    pub token: String,
     #[serde(with = "ts_seconds")]
-    expires_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,6 +49,8 @@ pub async fn create(
         },
     };
 
+    let password = user.password.ok_or(SessionError::BadCredentials)?;
+
     if !user.verified {
         return Err(SessionError::NotAuthorized("user is not verified".to_string()).into());
     }
@@ -58,7 +60,7 @@ pub async fn create(
         );
     }
 
-    if password::verify_password(&body.password, &user.password).is_err() {
+    if password::verify_password(&body.password, &password).is_err() {
         return Err(SessionError::BadCredentials.into());
     }
 

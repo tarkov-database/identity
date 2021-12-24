@@ -5,6 +5,7 @@ use crate::{
     model::Status,
     service::ServiceError,
     session::SessionError,
+    sso::SsoError,
     token::TokenError,
     user::UserError,
     utils::crypto::CryptoError,
@@ -34,14 +35,18 @@ pub enum Error {
     Action(#[from] ActionError),
     #[error("action error: {0}")]
     Token(#[from] TokenError),
+    #[error("sso error: {0}")]
+    Sso(#[from] SsoError),
+    #[error("Http error: {0}")]
+    Http(#[from] http::Error),
     #[error("crypto error: {0}")]
     Crypto(#[from] CryptoError),
-    #[error("token error: {0}")]
+    #[error("database error: {0}")]
     Database(#[from] mongodb::error::Error),
     #[error("Envy error: {0}")]
     Envy(#[from] envy::Error),
     #[error("Reqwest error: {0}")]
-    Http(#[from] reqwest::Error),
+    Reqwest(#[from] reqwest::Error),
     #[error("Hyper error: {0}")]
     Hyper(#[from] hyper::Error),
 }
@@ -57,6 +62,7 @@ impl axum::response::IntoResponse for Error {
             Error::Service(e) => e.error_response(),
             Error::Action(e) => e.error_response(),
             Error::Token(e) => e.error_response(),
+            Error::Sso(e) => e.error_response(),
             Error::AuthToken(e) => e.error_response(),
             _ => {
                 error!(error = %self, "internal error");

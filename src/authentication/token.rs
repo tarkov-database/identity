@@ -40,10 +40,10 @@ impl error::ErrorResponse for TokenError {
 
     fn status_code(&self) -> StatusCode {
         match self {
-            TokenError::Expired => StatusCode::UNAUTHORIZED,
-            TokenError::Immature => StatusCode::UNAUTHORIZED,
-            TokenError::WrongType => StatusCode::UNAUTHORIZED,
-            TokenError::Invalid => StatusCode::UNAUTHORIZED,
+            TokenError::Expired
+            | TokenError::Immature
+            | TokenError::WrongType
+            | TokenError::Invalid => StatusCode::UNAUTHORIZED,
             TokenError::EncodingFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

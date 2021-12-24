@@ -5,10 +5,12 @@ mod config;
 mod database;
 mod error;
 mod extract;
+mod http;
 mod mail;
 mod model;
 mod service;
 mod session;
+mod sso;
 mod token;
 mod user;
 mod utils;
@@ -18,6 +20,8 @@ use crate::{
     config::{AppConfig, GlobalConfig},
     database::Database,
     error::handle_error,
+    http::HttpClient,
+    sso::GitHub,
     utils::crypto::Aead256,
 };
 
@@ -66,6 +70,7 @@ async fn main() -> Result<()> {
     }
 
     let db = Database::new(mongo_opts, &app_config.mongo_db)?;
+    let client = HttpClient::default();
     let token_config =
         TokenConfig::from_secret(app_config.jwt_secret.as_bytes(), app_config.jwt_audience);
     let aead = Aead256::new(app_config.crypto_key)?;
@@ -74,6 +79,13 @@ async fn main() -> Result<()> {
         app_config.mg_region,
         app_config.mg_domain,
         app_config.mail_from,
+        client.clone(),
+    )?;
+    let github = GitHub::new(
+        app_config.gh_client_id,
+        app_config.gh_client_secret,
+        app_config.gh_redirect_uri,
+        client,
     )?;
     let global_config = GlobalConfig {
         allowed_domains: app_config.allowed_domains,
@@ -106,6 +118,7 @@ async fn main() -> Result<()> {
         .nest("/session", session::routes())
         .nest("/service", service::routes())
         .nest("/token", token::routes())
+        .nest("/sso", sso::routes(github))
         .nest("/action", action::routes());
 
     let routes = Router::new()
