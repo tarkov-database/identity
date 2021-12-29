@@ -309,6 +309,12 @@ pub(super) async fn authorized(
         .find(|e| e.primary && e.verified)
         .ok_or(SsoError::EmailInvalid)?;
 
+    let connection = Connection::GitHub {
+        user_id: user.id,
+        login: user.login,
+        two_factor_enabled: user.two_factor_authentication,
+    };
+
     let query = doc! {"$or": [
         {"connections": { "$elemMatch": { "type": "github", "userId": user.id } }},
         {"email": &email.address },
@@ -316,38 +322,15 @@ pub(super) async fn authorized(
 
     let doc = match db.get_user(query).await {
         Ok(doc) => {
-            let doc = if let Some(c) = doc.connections.iter().find(|&c| c.is_github()) {
-                match &c {
-                    Connection::GitHub { user_id, .. } if user_id == &user.id => doc,
-                    Connection::GitHub { user_id, .. } if user_id != &user.id => {
-                        db.update_user_connection(
-                            doc.id,
-                            Connection::GitHub {
-                                user_id: user.id,
-                                login: user.login,
-                                two_factor_enabled: user.two_factor_authentication,
-                            },
-                        )
-                        .await?
-                    }
-                    _ => {
-                        tracing::error!("this shouldn't happen!");
-                        return Err(SsoError::from(GitHubError::UnknownError).into());
-                    }
+            if let Some(c) = doc.connections.iter().find(|&c| c.is_github()) {
+                if c != &connection {
+                    db.update_user_connection(doc.id, connection).await?
+                } else {
+                    doc
                 }
             } else {
-                db.insert_user_connection(
-                    doc.id,
-                    Connection::GitHub {
-                        user_id: user.id,
-                        login: user.login,
-                        two_factor_enabled: user.two_factor_authentication,
-                    },
-                )
-                .await?
-            };
-
-            doc
+                db.insert_user_connection(doc.id, connection).await?
+            }
         }
         Err(e) => match e {
             Error::User(e) if e == UserError::NotFound => {
@@ -360,11 +343,7 @@ pub(super) async fn authorized(
 
                 let doc = UserDocument {
                     email: email.address,
-                    connections: vec![Connection::GitHub {
-                        user_id: user.id,
-                        login: user.login,
-                        two_factor_enabled: user.two_factor_authentication,
-                    }],
+                    connections: vec![connection],
                     can_login: true,
                     verified: true,
                     ..Default::default()
