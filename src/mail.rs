@@ -1,6 +1,6 @@
-use crate::Result;
+use crate::{http::HttpClient, Result};
 
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -48,24 +48,22 @@ pub struct Client {
     base: Url,
     api_key: String,
     domain: String,
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl Client {
-    const USER_AGENT: &'static str =
-        concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
-
-    const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-    const KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(60);
-
-    pub fn new<S: AsRef<str>>(api_key: S, region: Region, domain: S, from: S) -> Result<Self> {
-        let client = reqwest::Client::builder()
-            .https_only(true)
-            .tcp_keepalive(Self::KEEP_ALIVE_TIMEOUT)
-            .timeout(Self::DEFAULT_TIMEOUT)
-            .user_agent(Self::USER_AGENT)
-            .build()?;
-
+    pub fn new<K, D, F>(
+        api_key: K,
+        region: Region,
+        domain: D,
+        from: F,
+        client: HttpClient,
+    ) -> Result<Self>
+    where
+        K: AsRef<str>,
+        D: AsRef<str>,
+        F: AsRef<str>,
+    {
         let base = region.base_url().join("v3/").unwrap();
 
         Ok(Self {

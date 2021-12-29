@@ -47,12 +47,11 @@ pub async fn register(
     let user = UserDocument {
         id: ObjectId::new(),
         email: body.email,
-        password: password_hash,
+        password: Some(password_hash),
         roles: body.roles,
-        verified: false,
-        can_login: true,
         last_session: Utc.timestamp(0, 0),
         last_modified: Utc::now(),
+        ..Default::default()
     };
 
     db.insert_user(&user).await?;
@@ -83,7 +82,8 @@ pub async fn verify_email(
         return Err(ActionError::AlreadyVerified.into());
     }
 
-    db.update_user(user_id, doc! { "verified": true }).await?;
+    db.update_user_by_id(user_id, doc! { "verified": true })
+        .await?;
 
     Ok(Status::new(StatusCode::OK, "account verified"))
 }
@@ -128,7 +128,7 @@ pub async fn reset_password(
 
     let password_hash = password::validate_and_hash(&body.password)?;
 
-    db.update_user(user_id, doc! { "password": password_hash })
+    db.update_user_by_id(user_id, doc! { "password": password_hash })
         .await?;
 
     Ok(Status::new(StatusCode::OK, "new password set"))

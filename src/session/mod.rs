@@ -12,6 +12,7 @@ use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 
+pub use handler::SessionResponse;
 pub use routes::routes;
 
 #[derive(Debug, thiserror::Error)]
@@ -54,9 +55,9 @@ pub struct SessionClaims {
 }
 
 impl SessionClaims {
-    pub const DEFAULT_EXP_MIN: i64 = 30;
+    pub const DEFAULT_EXP_MIN: i64 = 60;
 
-    fn new<A>(aud: A, sub: &str) -> Self
+    pub fn new<A>(aud: A, sub: &str) -> Self
     where
         A: IntoIterator<Item = String>,
     {
@@ -70,7 +71,7 @@ impl SessionClaims {
         }
     }
 
-    fn with_scope<A, S>(aud: A, sub: &str, scope: S) -> Self
+    pub fn with_scope<A, S>(aud: A, sub: &str, scope: S) -> Self
     where
         A: IntoIterator<Item = String>,
         S: IntoIterator<Item = Scope>,
@@ -108,7 +109,7 @@ pub enum Scope {
 }
 
 impl Scope {
-    fn from_roles<R>(roles: R) -> Vec<Scope>
+    pub fn from_roles<R>(roles: R) -> Vec<Scope>
     where
         R: IntoIterator<Item = Role>,
     {

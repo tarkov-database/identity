@@ -22,7 +22,6 @@ use jsonwebtoken::{encode, EncodingKey};
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenResponse {
@@ -46,7 +45,7 @@ pub async fn get(
         return Err(ClientError::Locked.into());
     }
 
-    let header = jsonwebtoken::Header::default();
+    let header = jsonwebtoken::Header::new(config.alg);
 
     let key = if let Some(s) = svc.secret {
         let secret = enc.decrypt(base64::decode_config(&s, base64::STANDARD).unwrap());

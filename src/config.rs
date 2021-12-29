@@ -5,6 +5,7 @@ use std::{
     path::PathBuf,
 };
 
+use reqwest::Url;
 use serde::Deserialize;
 
 const fn default_addr() -> IpAddr {
@@ -36,6 +37,11 @@ pub struct AppConfig {
     pub mg_region: mail::Region,
     pub mg_domain: String,
     pub mg_key: String,
+
+    // GitHub OAuth
+    pub gh_client_id: String,
+    pub gh_client_secret: String,
+    pub gh_redirect_uri: Url,
 
     // JWT
     pub jwt_secret: String,

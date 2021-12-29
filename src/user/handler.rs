@@ -10,7 +10,7 @@ use crate::{
     utils, GlobalConfig,
 };
 
-use super::{Role, UserDocument, UserError};
+use super::{Connection, Role, UserDocument, UserError};
 
 use axum::extract::{Extension, Path};
 use chrono::{serde::ts_seconds, DateTime, TimeZone, Utc};
@@ -25,6 +25,7 @@ pub struct UserResponse {
     pub email: String,
     pub roles: Vec<Role>,
     pub verified: bool,
+    pub connections: Vec<Connection>,
     #[serde(with = "ts_seconds")]
     pub last_session: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
@@ -38,6 +39,7 @@ impl From<UserDocument> for UserResponse {
             email: doc.email,
             verified: doc.verified,
             roles: doc.roles,
+            connections: doc.connections,
             last_session: doc.last_session,
             last_modified: doc.last_modified,
         }
@@ -126,12 +128,11 @@ pub async fn create(
     let user = UserDocument {
         id: ObjectId::new(),
         email: body.email,
-        password: password_hash,
+        password: Some(password_hash),
         roles: body.roles,
-        verified: false,
-        can_login: true,
         last_session: Utc.timestamp(0, 0),
         last_modified: Utc::now(),
+        ..Default::default()
     };
 
     db.insert_user(&user).await?;
@@ -188,7 +189,7 @@ pub async fn update(
         return Err(QueryError::InvalidBody.into());
     }
 
-    let doc = db.update_user(id, doc).await?;
+    let doc = db.update_user_by_id(id, doc).await?;
 
     Ok(Response::new(doc.into()))
 }
