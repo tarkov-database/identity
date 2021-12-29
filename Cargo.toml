@@ -46,6 +46,7 @@ futures = { version = "0.3", default-features = false, features = [
 argon2 = "0.3"
 aes-gcm-siv = "0.10"
 rand = { version = "0.8", features = ["std"] }
+sha-1 = "0.10"
 base64 = "0.13"
 jsonwebtoken = "7"
 passwords = "3"

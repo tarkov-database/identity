@@ -16,7 +16,7 @@ mod user;
 mod utils;
 
 use crate::{
-    authentication::token::TokenConfig,
+    authentication::{password::Hibp, token::TokenConfig},
     config::{AppConfig, GlobalConfig},
     database::Database,
     error::handle_error,
@@ -74,6 +74,7 @@ async fn main() -> Result<()> {
     let token_config =
         TokenConfig::from_secret(app_config.jwt_secret.as_bytes(), app_config.jwt_audience);
     let aead = Aead256::new(app_config.crypto_key)?;
+    let hibp = Hibp::with_client(client.clone());
     let mail = mail::Client::new(
         app_config.mg_key,
         app_config.mg_region,
@@ -89,6 +90,7 @@ async fn main() -> Result<()> {
     )?;
     let global_config = GlobalConfig {
         allowed_domains: app_config.allowed_domains,
+        hibp_check_enabled: app_config.hibp_check,
     };
 
     let middleware = ServiceBuilder::new()
@@ -110,6 +112,7 @@ async fn main() -> Result<()> {
         .layer(AddExtensionLayer::new(db))
         .layer(AddExtensionLayer::new(token_config))
         .layer(AddExtensionLayer::new(aead))
+        .layer(AddExtensionLayer::new(hibp))
         .layer(AddExtensionLayer::new(mail));
 
     let svc_routes = Router::new()

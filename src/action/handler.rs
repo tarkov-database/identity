@@ -1,5 +1,8 @@
 use crate::{
-    authentication::{password, token::TokenConfig},
+    authentication::{
+        password::{self, Hibp},
+        token::TokenConfig,
+    },
     database::Database,
     extract::{Query, SizedJson, TokenData},
     mail,
@@ -29,6 +32,7 @@ pub async fn register(
     SizedJson(body): SizedJson<RegisterRequest>,
     Extension(db): Extension<Database>,
     Extension(global): Extension<GlobalConfig>,
+    Extension(hibp): Extension<Hibp>,
     Extension(mail): Extension<mail::Client>,
     Extension(config): Extension<TokenConfig>,
 ) -> crate::Result<Status> {
@@ -43,6 +47,10 @@ pub async fn register(
     }
 
     let password_hash = password::validate_and_hash(&body.password)?;
+
+    if global.hibp_check_enabled {
+        hibp.check_password(&body.password).await?;
+    }
 
     let user = UserDocument {
         id: ObjectId::new(),

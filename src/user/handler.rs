@@ -1,6 +1,10 @@
 use crate::{
     action::send_verification_mail,
-    authentication::{password, token::TokenConfig, AuthenticationError},
+    authentication::{
+        password::{self, Hibp},
+        token::TokenConfig,
+        AuthenticationError,
+    },
     database::Database,
     error::QueryError,
     extract::{Query, SizedJson, TokenData},
@@ -106,6 +110,7 @@ pub async fn create(
     SizedJson(body): SizedJson<CreateRequest>,
     Extension(db): Extension<Database>,
     Extension(global): Extension<GlobalConfig>,
+    Extension(hibp): Extension<Hibp>,
     Extension(mail): Extension<mail::Client>,
     Extension(config): Extension<TokenConfig>,
 ) -> crate::Result<Response<UserResponse>> {
@@ -124,6 +129,10 @@ pub async fn create(
     }
 
     let password_hash = password::validate_and_hash(&body.password)?;
+
+    if global.hibp_check_enabled {
+        hibp.check_password(&body.password).await?;
+    }
 
     let user = UserDocument {
         id: ObjectId::new(),
