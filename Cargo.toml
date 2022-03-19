@@ -43,12 +43,12 @@ mongodb = { version = "2.1.0", features = ["bson-chrono-0_4"] }
 futures = { version = "0.3", default-features = false, features = [
     "async-await",
 ] }
-argon2 = "0.3"
+argon2 = "0.4"
 aes-gcm-siv = "0.10"
 rand = { version = "0.8", features = ["std"] }
 sha-1 = "0.10"
 base64 = "0.13"
-jsonwebtoken = "7"
+jsonwebtoken = "8"
 passwords = "3"
 envy = "0.4"
 dotenv = "0.15"
