@@ -16,6 +16,10 @@ const fn default_port() -> u16 {
     8080
 }
 
+const fn default_hibp_check() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     // HTTP server
@@ -52,11 +56,14 @@ pub struct AppConfig {
 
     // Global vars
     pub allowed_domains: Vec<String>,
+    #[serde(default = "default_hibp_check")]
+    pub hibp_check: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct GlobalConfig {
     pub allowed_domains: Vec<String>,
+    pub hibp_check_enabled: bool,
 }
 
 impl GlobalConfig {

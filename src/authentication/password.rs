@@ -1,4 +1,4 @@
-use crate::Result;
+use crate::{http::HttpClient, Result};
 
 use super::AuthenticationError;
 
@@ -10,6 +10,8 @@ use argon2::{
 };
 use passwords::{analyzer, scorer};
 use rand::rngs::OsRng;
+use reqwest::Url;
+use sha1::{Digest, Sha1};
 use tracing::error;
 
 /// Minimum password score
@@ -28,6 +30,8 @@ pub enum PasswordError {
     InvalidPassword(String),
     #[error("password is too weak")]
     BadScore,
+    #[error("password has been pwned (compromised), {0} times")]
+    Pwned(u64),
 }
 
 pub fn hash_password<S: AsRef<[u8]>>(password: S) -> A2Result<String> {
@@ -122,4 +126,65 @@ pub fn validate_and_hash(password: &str) -> Result<String> {
     };
 
     Ok(hash)
+}
+
+#[derive(Clone, Default)]
+pub struct Hibp {
+    client: HttpClient,
+}
+
+impl Hibp {
+    const PASSWORD_API_URL: &'static str = "https://api.pwnedpasswords.com";
+
+    pub fn with_client(client: HttpClient) -> Self {
+        Self { client }
+    }
+
+    pub async fn check_password<P>(&self, password: P) -> Result<()>
+    where
+        P: AsRef<[u8]>,
+    {
+        let hash = format!("{:x}", Sha1::digest(password)).to_uppercase();
+
+        if let Some(n) = self.find_hash(&hash).await? {
+            return Err(AuthenticationError::from(PasswordError::Pwned(n)).into());
+        }
+
+        Ok(())
+    }
+
+    async fn find_hash(&self, hash: &str) -> Result<Option<u64>> {
+        let url = format!("{}/range/{}", Self::PASSWORD_API_URL, &hash[..5])
+            .parse::<Url>()
+            .unwrap();
+
+        let hashes = self
+            .client
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+
+        let result = hashes.lines().find(|s| s[..35] == hash[5..]).map(|s| {
+            let (_, count) = s.split_once(':').unwrap();
+            count.parse().unwrap()
+        });
+
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PWNED_PASSWORD: &str = "foobar";
+
+    #[tokio::test]
+    async fn hibp_password_check() {
+        let hibp = Hibp::default();
+        hibp.check_password(PWNED_PASSWORD).await.unwrap_err();
+    }
 }
