@@ -41,7 +41,7 @@ where
     type Rejection = axum::response::Response;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        match ContentLengthLimit::<Json<T>, CONTENT_LENGTH_LIMIT>::from_request(req).await {
+        match ContentLengthLimit::<Json<T>>::from_request(req).await {
             Ok(value) => Ok(Self(value.0 .0)),
             Err(err) => Err(err),
         }
@@ -83,7 +83,7 @@ where
 }
 
 /// ContentLengthLimit extractor with custom error response
-pub struct ContentLengthLimit<T, const N: u64>(pub T);
+pub struct ContentLengthLimit<T, const N: u64 = CONTENT_LENGTH_LIMIT>(pub T);
 
 #[async_trait]
 impl<T, B, const N: u64> FromRequest<B> for ContentLengthLimit<T, N>
