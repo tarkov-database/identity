@@ -3,7 +3,7 @@ name = "identity-server"
 version = "0.1.0"
 authors = ["Markus Wiegand <mail@morphy2k.dev>"]
 edition = "2021"
-rust-version = "1.57"
+rust-version = "1.59"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -61,3 +61,4 @@ thiserror = "1"
 lto = true
 opt-level = 3
 debug = false
+strip = "debuginfo"
