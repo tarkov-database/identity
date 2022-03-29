@@ -179,8 +179,10 @@ impl Database {
     }
 
     pub async fn update_user(&self, filter: Document, update: Document) -> Result<UserDocument> {
-        let mut doc = update;
-        doc.insert("$currentDate", doc! { "lastModified": true });
+        let doc = doc! {
+            "$currentDate": { "lastModified": true },
+            "$set": update
+        };
 
         let opts = FindOneAndUpdateOptions::builder()
             .return_document(ReturnDocument::After)
