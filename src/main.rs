@@ -91,6 +91,7 @@ async fn main() -> Result<()> {
     let global_config = GlobalConfig {
         allowed_domains: app_config.allowed_domains,
         hibp_check_enabled: app_config.hibp_check,
+        editor_mail_addrs: app_config.editor_mail_address,
     };
 
     let middleware = ServiceBuilder::new()

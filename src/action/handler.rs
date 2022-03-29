@@ -24,8 +24,6 @@ use serde::Deserialize;
 pub struct RegisterRequest {
     email: String,
     password: String,
-    #[serde(default)]
-    roles: Vec<Role>,
 }
 
 pub async fn register(
@@ -38,7 +36,7 @@ pub async fn register(
 ) -> crate::Result<Status> {
     let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
 
-    if !global.is_domain_allowed(domain) {
+    if !global.is_allowed_domain(domain) {
         return Err(UserError::DomainNotAllowed.into());
     }
 
@@ -52,11 +50,17 @@ pub async fn register(
         hibp.check_password(&body.password).await?;
     }
 
+    let roles = if global.is_editor_address(&body.email) {
+        vec![Role::UserEditor]
+    } else {
+        Default::default()
+    };
+
     let user = UserDocument {
         id: ObjectId::new(),
         email: body.email,
         password: Some(password_hash),
-        roles: body.roles,
+        roles,
         last_session: Utc.timestamp(0, 0),
         last_modified: Utc::now(),
         ..Default::default()

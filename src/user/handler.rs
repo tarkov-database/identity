@@ -120,7 +120,7 @@ pub async fn create(
 
     let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
 
-    if !global.is_domain_allowed(domain) {
+    if !global.is_allowed_domain(domain) {
         return Err(UserError::DomainNotAllowed.into());
     }
 

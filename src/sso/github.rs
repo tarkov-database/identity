@@ -337,7 +337,7 @@ pub(super) async fn authorized(
                 let domain =
                     utils::get_email_domain(&email.address).ok_or(UserError::InvalidAddr)?;
 
-                if !global.is_domain_allowed(domain) {
+                if !global.is_allowed_domain(domain) {
                     return Err(UserError::DomainNotAllowed.into());
                 }
 

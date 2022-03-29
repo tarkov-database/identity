@@ -55,6 +55,7 @@ pub struct AppConfig {
     pub crypto_key: String,
 
     // Global vars
+    pub editor_mail_address: Vec<String>,
     pub allowed_domains: Vec<String>,
     #[serde(default = "default_hibp_check")]
     pub hibp_check: bool,
@@ -62,16 +63,25 @@ pub struct AppConfig {
 
 #[derive(Debug, Clone)]
 pub struct GlobalConfig {
-    pub allowed_domains: Vec<String>,
     pub hibp_check_enabled: bool,
+    pub allowed_domains: Vec<String>,
+    pub editor_mail_addrs: Vec<String>,
 }
 
 impl GlobalConfig {
-    pub fn is_domain_allowed<D>(&self, domain: D) -> bool
+    pub fn is_allowed_domain<D>(&self, domain: D) -> bool
     where
         D: AsRef<str>,
     {
         let domain = domain.as_ref();
         self.allowed_domains.iter().any(|d| d == domain || d == "*")
+    }
+
+    pub fn is_editor_address<A>(&self, addr: A) -> bool
+    where
+        A: AsRef<str>,
+    {
+        let addr = addr.as_ref();
+        self.editor_mail_addrs.iter().any(|d| d == addr)
     }
 }
