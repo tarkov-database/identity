@@ -258,7 +258,7 @@ pub(super) async fn authorize(
         .path_and_query(pq)
         .build()?;
 
-    let mut redirect = Redirect::to(uri).into_response();
+    let mut redirect = Redirect::to(&uri.to_string()).into_response();
     let cookie = format!(
         "state={}; Path=/v1/sso/github; SameSite=Lax; Secure; HttpOnly",
         state

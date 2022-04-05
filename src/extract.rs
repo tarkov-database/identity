@@ -67,7 +67,10 @@ where
             Ok(value) => Ok(Self(value.0)),
             Err(rejection) => {
                 let (status, message): (_, Cow<'_, str>) = match rejection {
-                    JsonRejection::InvalidJsonBody(err) => {
+                    JsonRejection::JsonDataError(err) => {
+                        (StatusCode::BAD_REQUEST, err.to_string().into())
+                    }
+                    JsonRejection::JsonSyntaxError(err) => {
                         (StatusCode::BAD_REQUEST, err.to_string().into())
                     }
                     JsonRejection::MissingJsonContentType(err) => {
@@ -190,7 +193,7 @@ where
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
         let header = match req.headers() {
-            Some(v) if v.contains_key(CF_CONNECTING_IP) => Some((
+            v if v.contains_key(CF_CONNECTING_IP) => Some((
                 CF_CONNECTING_IP,
                 v.get(CF_CONNECTING_IP).unwrap().to_str().map_err(|_| {
                     Status::new(
@@ -202,7 +205,7 @@ where
                     )
                 })?,
             )),
-            Some(v) if v.contains_key(X_FORWARDED_FOR) => Some((
+            v if v.contains_key(X_FORWARDED_FOR) => Some((
                 X_FORWARDED_FOR,
                 v.get(X_FORWARDED_FOR)
                     .unwrap()
@@ -222,12 +225,6 @@ where
                         )
                     })?,
             )),
-            None => {
-                return Err(Status::new(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "internal error",
-                ));
-            }
             _ => None,
         };
 
