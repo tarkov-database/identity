@@ -14,10 +14,10 @@ use crate::{
     utils, GlobalConfig,
 };
 
-use super::{Connection, Role, UserDocument, UserError};
+use super::{Connection, Role, SessionDocument, UserDocument, UserError};
 
 use axum::extract::{Extension, Path};
-use chrono::{serde::ts_seconds, DateTime, TimeZone, Utc};
+use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_bson, to_document, Document};
 use serde::{Deserialize, Serialize};
@@ -30,8 +30,7 @@ pub struct UserResponse {
     pub roles: Vec<Role>,
     pub verified: bool,
     pub connections: Vec<Connection>,
-    #[serde(with = "ts_seconds")]
-    pub last_session: DateTime<Utc>,
+    pub last_sessions: Vec<SessionResponse>,
     #[serde(with = "ts_seconds")]
     pub last_modified: DateTime<Utc>,
 }
@@ -44,9 +43,26 @@ impl From<UserDocument> for UserResponse {
             verified: doc.verified,
             roles: doc.roles,
             connections: doc.connections,
-            last_session: doc.last_session,
+            last_sessions: doc
+                .last_sessions
+                .into_iter()
+                .map(SessionResponse::from)
+                .collect(),
             last_modified: doc.last_modified,
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionResponse {
+    #[serde(with = "ts_seconds")]
+    pub date: DateTime<Utc>,
+}
+
+impl From<SessionDocument> for SessionResponse {
+    fn from(doc: SessionDocument) -> Self {
+        Self { date: doc.date }
     }
 }
 
@@ -139,7 +155,6 @@ pub async fn create(
         email: body.email,
         password: Some(password_hash),
         roles: body.roles,
-        last_session: Utc.timestamp(0, 0),
         last_modified: Utc::now(),
         ..Default::default()
     };

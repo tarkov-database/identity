@@ -8,7 +8,7 @@ use crate::{
     Result,
 };
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use futures::stream::TryStreamExt;
 use hyper::StatusCode;
 use mongodb::{
@@ -75,8 +75,7 @@ pub struct UserDocument {
     pub verified: bool,
     pub can_login: bool,
     pub connections: Vec<Connection>,
-    #[serde(with = "chrono_datetime_as_bson_datetime")]
-    pub last_session: DateTime<Utc>,
+    pub last_sessions: Vec<SessionDocument>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub last_modified: DateTime<Utc>,
 }
@@ -91,10 +90,17 @@ impl Default for UserDocument {
             verified: false,
             can_login: true,
             connections: Default::default(),
-            last_session: Utc.timestamp(0, 0),
+            last_sessions: Default::default(),
             last_modified: Utc::now(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDocument {
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    pub date: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -244,13 +250,25 @@ impl Database {
     }
 
     pub async fn set_user_session(&self, user_id: ObjectId) -> Result<()> {
+        let filter = doc! { "_id": user_id };
+
+        let UserDocument {
+            mut last_sessions, ..
+        } = self.get_user(filter.clone()).await?;
+
+        if last_sessions.len() == 5 {
+            last_sessions = last_sessions.into_iter().skip(1).collect();
+        }
+
+        last_sessions.push(SessionDocument { date: Utc::now() });
+
         let doc = doc! {
-            "$currentDate": { "lastSession": true },
+            "$set": {"lastSessions": to_bson(&last_sessions).unwrap()},
         };
 
         let result = self
             .collection::<UserDocument>(COLLECTION)
-            .update_one(doc! { "_id": user_id }, doc, None)
+            .update_one(filter, doc, None)
             .await?;
 
         if result.matched_count == 0 {

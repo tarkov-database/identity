@@ -14,7 +14,7 @@ use crate::{
 use super::{send_reset_mail, send_verification_mail, ActionClaims, ActionError, ActionType};
 
 use axum::extract::Extension;
-use chrono::{TimeZone, Utc};
+use chrono::Utc;
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::Deserialize;
@@ -61,7 +61,6 @@ pub async fn register(
         email: body.email,
         password: Some(password_hash),
         roles,
-        last_session: Utc.timestamp(0, 0),
         last_modified: Utc::now(),
         ..Default::default()
     };
