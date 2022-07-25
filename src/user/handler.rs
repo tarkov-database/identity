@@ -33,6 +33,8 @@ pub struct UserResponse {
     pub last_sessions: Vec<SessionResponse>,
     #[serde(with = "ts_seconds")]
     pub last_modified: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub created: DateTime<Utc>,
 }
 
 impl From<UserDocument> for UserResponse {
@@ -49,6 +51,7 @@ impl From<UserDocument> for UserResponse {
                 .map(SessionResponse::from)
                 .collect(),
             last_modified: doc.last_modified,
+            created: doc.created,
         }
     }
 }
@@ -155,7 +158,6 @@ pub async fn create(
         email: body.email,
         password: Some(password_hash),
         roles: body.roles,
-        last_modified: Utc::now(),
         ..Default::default()
     };
 

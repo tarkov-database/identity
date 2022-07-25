@@ -78,6 +78,8 @@ pub struct UserDocument {
     pub last_sessions: Vec<SessionDocument>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub last_modified: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    pub created: DateTime<Utc>,
 }
 
 impl Default for UserDocument {
@@ -92,6 +94,7 @@ impl Default for UserDocument {
             connections: Default::default(),
             last_sessions: Default::default(),
             last_modified: Utc::now(),
+            created: Utc::now(),
         }
     }
 }
