@@ -1,10 +1,11 @@
-use crate::mail;
+use crate::{mail, AppState};
 
 use std::{
     net::{IpAddr, Ipv4Addr},
     path::PathBuf,
 };
 
+use axum::extract::FromRef;
 use reqwest::Url;
 use serde::Deserialize;
 
@@ -83,5 +84,11 @@ impl GlobalConfig {
     {
         let addr = addr.as_ref();
         self.editor_mail_addrs.iter().any(|d| d == addr)
+    }
+}
+
+impl FromRef<AppState> for GlobalConfig {
+    fn from_ref(state: &AppState) -> Self {
+        state.global_config.clone()
     }
 }

@@ -1,4 +1,4 @@
-use crate::{http::HttpClient, Result};
+use crate::{http::HttpClient, AppState, Result};
 
 use super::AuthenticationError;
 
@@ -8,6 +8,7 @@ use argon2::{
     },
     Algorithm, Argon2, Params, Version,
 };
+use axum::extract::FromRef;
 use passwords::{analyzer, scorer};
 use rand::rngs::OsRng;
 use reqwest::Url;
@@ -173,6 +174,12 @@ impl Hibp {
         });
 
         Ok(result)
+    }
+}
+
+impl FromRef<AppState> for Hibp {
+    fn from_ref(state: &AppState) -> Self {
+        state.hibp_client.clone()
     }
 }
 

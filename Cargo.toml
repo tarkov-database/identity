@@ -27,7 +27,7 @@ tower-http = { version = "0.3", features = [
   "trace",
   "sensitive-headers",
 ] }
-axum = { version = "0.5", features = ["headers"] }
+axum = { version = "0.6.0-rc.2", features = ["headers"] }
 reqwest = { version = "0.11", features = [
   "json",
   "trust-dns",
@@ -44,7 +44,7 @@ futures = { version = "0.3", default-features = false, features = [
   "async-await",
 ] }
 argon2 = "0.4"
-aes-gcm-siv = "0.10"
+aes-gcm-siv = "0.11"
 rand = { version = "0.8", features = ["std"] }
 sha-1 = "0.10"
 base64 = "0.13"

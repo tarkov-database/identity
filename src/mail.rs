@@ -1,7 +1,8 @@
-use crate::{http::HttpClient, Result};
+use crate::{http::HttpClient, AppState, Result};
 
 use std::collections::HashMap;
 
+use axum::extract::FromRef;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
@@ -122,5 +123,11 @@ impl Client {
         res.error_for_status()?;
 
         Ok(())
+    }
+}
+
+impl FromRef<AppState> for Client {
+    fn from_ref(state: &AppState) -> Self {
+        state.mail_client.clone()
     }
 }

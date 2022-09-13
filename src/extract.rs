@@ -13,12 +13,12 @@ use axum::{
     async_trait,
     extract::{
         rejection::{ContentLengthLimitRejection, JsonRejection, QueryRejection},
-        Extension, FromRequest, RequestParts, TypedHeader,
+        FromRef, FromRequest, FromRequestParts, TypedHeader,
     },
     response::IntoResponse,
-    BoxError,
 };
 use headers::{authorization::Bearer, Authorization};
+use http::{request::Parts, Request};
 use hyper::StatusCode;
 use serde::de::DeserializeOwned;
 
@@ -31,17 +31,17 @@ const CF_CONNECTING_IP: &str = "CF-Connecting-IP";
 pub struct SizedJson<T>(pub T);
 
 #[async_trait]
-impl<T, B> FromRequest<B> for SizedJson<T>
+impl<S, B, T> FromRequest<S, B> for SizedJson<T>
 where
-    T: DeserializeOwned,
-    B: axum::body::HttpBody + Send,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
+    axum::Json<T>: FromRequest<S, B, Rejection = JsonRejection>,
+    S: Send + Sync,
+    B: Send + 'static,
 {
     type Rejection = axum::response::Response;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        match ContentLengthLimit::<Json<T>>::from_request(req).await {
+    #[inline]
+    async fn from_request(req: Request<B>, state: &S) -> Result<Self, Self::Rejection> {
+        match ContentLengthLimit::<Json<T>>::from_request(req, state).await {
             Ok(value) => Ok(Self(value.0 .0)),
             Err(err) => Err(err),
         }
@@ -52,18 +52,17 @@ where
 pub struct Json<T>(pub T);
 
 #[async_trait]
-impl<B, T> FromRequest<B> for Json<T>
+impl<S, B, T> FromRequest<S, B> for Json<T>
 where
-    T: DeserializeOwned,
-    B: axum::body::HttpBody + Send,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
+    axum::Json<T>: FromRequest<S, B, Rejection = JsonRejection>,
+    S: Send + Sync,
+    B: Send + 'static,
 {
     type Rejection = Status;
 
     #[inline]
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        match axum::Json::<T>::from_request(req).await {
+    async fn from_request(req: Request<B>, state: &S) -> Result<Self, Self::Rejection> {
+        match axum::Json::<T>::from_request(req, state).await {
             Ok(value) => Ok(Self(value.0)),
             Err(rejection) => {
                 let (status, message): (_, Cow<'_, str>) = match rejection {
@@ -89,17 +88,19 @@ where
 pub struct ContentLengthLimit<T, const N: u64 = CONTENT_LENGTH_LIMIT>(pub T);
 
 #[async_trait]
-impl<T, B, const N: u64> FromRequest<B> for ContentLengthLimit<T, N>
+impl<S, B, R, T, const N: u64> FromRequest<S, B> for ContentLengthLimit<T, N>
 where
-    T: FromRequest<B>,
-    T::Rejection: IntoResponse,
-    B: Send,
+    R: axum::response::IntoResponse,
+    axum::extract::ContentLengthLimit<T, N>:
+        FromRequest<S, B, Rejection = ContentLengthLimitRejection<R>>,
+    S: Send + Sync,
+    B: Send + 'static,
 {
     type Rejection = axum::response::Response;
 
     #[inline]
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        match axum::extract::ContentLengthLimit::<T, N>::from_request(req).await {
+    async fn from_request(req: Request<B>, state: &S) -> Result<Self, Self::Rejection> {
+        match axum::extract::ContentLengthLimit::<T, N>::from_request(req, state).await {
             Ok(value) => Ok(Self(value.0)),
             Err(rejection) => {
                 let (status, message): (_, Cow<'_, str>) = match rejection {
@@ -122,15 +123,15 @@ where
 pub struct Query<T>(pub T);
 
 #[async_trait]
-impl<T, B> FromRequest<B> for Query<T>
+impl<S, T> FromRequestParts<S> for Query<T>
 where
     T: DeserializeOwned,
-    B: Send,
+    S: Send + Sync,
 {
     type Rejection = Status;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        match axum::extract::Query::<T>::from_request(req).await {
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        match axum::extract::Query::<T>::from_request_parts(parts, state).await {
             Ok(value) => Ok(Self(value.0)),
             Err(rejection) => {
                 let (status, message): (_, Cow<'_, str>) = match rejection {
@@ -151,20 +152,19 @@ where
     T: TokenClaims;
 
 #[async_trait]
-impl<B, T> FromRequest<B> for TokenData<T>
+impl<S, T> FromRequestParts<S> for TokenData<T>
 where
+    TokenConfig: FromRef<S>,
     T: TokenClaims,
-    B: Send,
+    S: Send + Sync,
 {
     type Rejection = Error;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(config) = Extension::<TokenConfig>::from_request(req)
-            .await
-            .expect("token config missing");
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let config = TokenConfig::from_ref(state);
 
         let TypedHeader(Authorization(bearer)) =
-            TypedHeader::<Authorization<Bearer>>::from_request(req)
+            TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state)
                 .await
                 .map_err(|_| {
                     AuthenticationError::InvalidHeader("authorization header missing".to_string())
@@ -185,14 +185,14 @@ where
 pub struct RemoteAddr(pub net::IpAddr);
 
 #[async_trait]
-impl<B> FromRequest<B> for RemoteAddr
+impl<S> FromRequestParts<S> for RemoteAddr
 where
-    B: Send,
+    S: Send + Sync,
 {
     type Rejection = Status;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let header = match req.headers() {
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let header = match &parts.headers {
             v if v.contains_key(CF_CONNECTING_IP) => Some((
                 CF_CONNECTING_IP,
                 v.get(CF_CONNECTING_IP).unwrap().to_str().map_err(|_| {
@@ -246,7 +246,11 @@ where
             return Ok(Self(addr));
         };
 
-        match axum::extract::connect_info::ConnectInfo::<net::SocketAddr>::from_request(req).await {
+        match axum::extract::connect_info::ConnectInfo::<net::SocketAddr>::from_request_parts(
+            parts, state,
+        )
+        .await
+        {
             Ok(v) => Ok(Self(v.0.ip())),
             Err(_) => {
                 return Err(Status::new(

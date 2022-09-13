@@ -14,7 +14,7 @@ use crate::{
 use super::{oauth::StateClaims, SsoError};
 
 use axum::{
-    extract::{Extension, TypedHeader},
+    extract::{Extension, State, TypedHeader},
     response::{IntoResponse, Redirect},
 };
 
@@ -237,7 +237,7 @@ struct Email {
 
 pub(super) async fn authorize(
     Extension(gh): Extension<GitHub>,
-    Extension(config): Extension<TokenConfig>,
+    State(config): State<TokenConfig>,
 ) -> crate::Result<axum::response::Response> {
     let header = jsonwebtoken::Header::new(config.alg);
     let claims = StateClaims::new(config.validation.aud.clone().unwrap());
@@ -280,9 +280,9 @@ pub(super) async fn authorized(
     Query(params): Query<AuthorizedParams>,
     TypedHeader(cookies): TypedHeader<Cookie>,
     Extension(gh): Extension<GitHub>,
-    Extension(db): Extension<Database>,
-    Extension(global): Extension<GlobalConfig>,
-    Extension(config): Extension<TokenConfig>,
+    State(db): State<Database>,
+    State(global): State<GlobalConfig>,
+    State(config): State<TokenConfig>,
 ) -> crate::Result<Response<SessionResponse>> {
     let state = cookies.get("state").ok_or(SsoError::StateMissing)?;
 

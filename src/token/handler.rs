@@ -15,7 +15,7 @@ use crate::{
 
 use std::iter::FromIterator;
 
-use axum::extract::Extension;
+use axum::extract::State;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::{encode, EncodingKey};
@@ -32,9 +32,9 @@ pub struct TokenResponse {
 
 pub async fn get(
     TokenData(claims): TokenData<ClientClaims>,
-    Extension(db): Extension<Database>,
-    Extension(enc): Extension<Aead256>,
-    Extension(config): Extension<TokenConfig>,
+    State(db): State<Database>,
+    State(enc): State<Aead256>,
+    State(config): State<TokenConfig>,
 ) -> crate::Result<Response<TokenResponse>> {
     let client_id = ObjectId::parse_str(&claims.sub).map_err(|_| ClientError::InvalidId)?;
 
@@ -82,9 +82,9 @@ pub struct CreateRequest {
 
 pub async fn create(
     TokenData(claims): TokenData<SessionClaims>,
+    State(db): State<Database>,
+    State(config): State<TokenConfig>,
     SizedJson(body): SizedJson<CreateRequest>,
-    Extension(db): Extension<Database>,
-    Extension(config): Extension<TokenConfig>,
 ) -> crate::Result<Response<TokenResponse>> {
     let client_id = ObjectId::parse_str(&claims.sub).map_err(|_| ClientError::InvalidId)?;
     let user_id = ObjectId::parse_str(&claims.sub).map_err(|_| UserError::InvalidId)?;

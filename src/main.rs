@@ -25,14 +25,13 @@ use crate::{
     utils::crypto::Aead256,
 };
 
-use std::{env, iter::once, net::SocketAddr, time::Duration};
+use std::{env, iter::once, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::AUTHORIZATION;
 use mongodb::options::{ClientOptions, Tls, TlsOptions};
 use tower::ServiceBuilder;
 use tower_http::{
-    add_extension::AddExtensionLayer,
     sensitive_headers::SetSensitiveHeadersLayer,
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     LatencyUnit,
@@ -43,6 +42,16 @@ use tower_http::{
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
+
+#[derive(Clone)]
+pub struct AppState {
+    mail_client: mail::Client,
+    hibp_client: Hibp,
+    database: Database,
+    aead: Aead256,
+    global_config: GlobalConfig,
+    token_config: TokenConfig,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -94,6 +103,15 @@ async fn main() -> Result<()> {
         editor_mail_addrs: app_config.editor_mail_address,
     };
 
+    let state = Arc::new(AppState {
+        mail_client: mail,
+        hibp_client: hibp,
+        database: db,
+        aead,
+        global_config,
+        token_config,
+    });
+
     let middleware = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(handle_error))
         .load_shed()
@@ -108,22 +126,16 @@ async fn main() -> Result<()> {
                         .include_headers(true)
                         .latency_unit(LatencyUnit::Micros),
                 ),
-        )
-        .layer(AddExtensionLayer::new(global_config))
-        .layer(AddExtensionLayer::new(db))
-        .layer(AddExtensionLayer::new(token_config))
-        .layer(AddExtensionLayer::new(aead))
-        .layer(AddExtensionLayer::new(hibp))
-        .layer(AddExtensionLayer::new(mail));
+        );
 
     let svc_routes = Router::new()
-        .nest("/user", user::routes())
-        .nest("/client", client::routes())
-        .nest("/session", session::routes())
-        .nest("/service", service::routes())
-        .nest("/token", token::routes())
-        .nest("/sso", sso::routes(github))
-        .nest("/action", action::routes());
+        .nest("/user", user::routes(state.clone()))
+        .nest("/client", client::routes(state.clone()))
+        .nest("/session", session::routes(state.clone()))
+        .nest("/service", service::routes(state.clone()))
+        .nest("/token", token::routes(state.clone()))
+        .nest("/sso", sso::routes(state.clone(), github))
+        .nest("/action", action::routes(state));
 
     let routes = Router::new()
         .nest("/v1", svc_routes)

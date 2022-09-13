@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub use routes::routes;
 
-#[derive(Debug, PartialEq, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum UserError {
     #[error("user not found")]
     NotFound,
