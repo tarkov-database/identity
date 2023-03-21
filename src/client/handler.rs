@@ -2,7 +2,7 @@ use crate::{
     authentication::AuthenticationError,
     database::Database,
     error::QueryError,
-    extract::{Query, SizedJson, TokenData},
+    extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
     service::ServiceError,
     session::{self, SessionClaims},
@@ -114,7 +114,7 @@ pub struct CreateRequest {
 pub async fn create(
     TokenData(claims): TokenData<SessionClaims>,
     State(db): State<Database>,
-    SizedJson(body): SizedJson<CreateRequest>,
+    Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<ClientResponse>> {
     let user_id = if let Some(id) = body.user {
         if !claims.scope.contains(&session::Scope::ClientWrite) && claims.sub != id {
@@ -158,7 +158,7 @@ pub async fn update(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
     State(db): State<Database>,
-    SizedJson(body): SizedJson<UpdateRequest>,
+    Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<ClientResponse>> {
     let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 

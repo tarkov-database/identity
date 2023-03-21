@@ -25,7 +25,7 @@ use crate::{
     utils::crypto::Aead256,
 };
 
-use std::{env, iter::once, net::SocketAddr, sync::Arc, time::Duration};
+use std::{env, iter::once, net::SocketAddr, time::Duration};
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::AUTHORIZATION;
@@ -103,14 +103,14 @@ async fn main() -> Result<()> {
         editor_mail_addrs: app_config.editor_mail_address,
     };
 
-    let state = Arc::new(AppState {
+    let state = AppState {
         mail_client: mail,
         hibp_client: hibp,
         database: db,
         aead,
         global_config,
         token_config,
-    });
+    };
 
     let middleware = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(handle_error))
@@ -128,21 +128,21 @@ async fn main() -> Result<()> {
                 ),
         );
 
-    let svc_routes = Router::new()
-        .nest("/user", user::routes(state.clone()))
-        .nest("/client", client::routes(state.clone()))
-        .nest("/session", session::routes(state.clone()))
-        .nest("/service", service::routes(state.clone()))
-        .nest("/token", token::routes(state.clone()))
-        .nest("/sso", sso::routes(state.clone(), github))
-        .nest("/action", action::routes(state));
+    let svc_routes: Router<()> = Router::new()
+        .nest("/user", user::routes())
+        .nest("/client", client::routes())
+        .nest("/session", session::routes())
+        .nest("/service", service::routes())
+        .nest("/token", token::routes())
+        .nest("/sso", sso::routes(github))
+        .nest("/action", action::routes())
+        .with_state(state);
 
     let routes = Router::new()
         .nest("/v1", svc_routes)
         .layer(middleware.into_inner());
 
     let addr = SocketAddr::from((app_config.server_addr, app_config.server_port));
-    tracing::debug!("listening on {}", addr);
     let server =
         Server::bind(&addr).serve(routes.into_make_service_with_connect_info::<SocketAddr>());
 
@@ -151,6 +151,12 @@ async fn main() -> Result<()> {
     let server = server.with_graceful_shutdown(async move {
         signal_rx.recv().await.ok();
     });
+
+    tracing::debug!(
+        ipAddress =? addr.ip(),
+        port =? addr.port(),
+        "HTTP(S) server started"
+    );
 
     server.await?;
 

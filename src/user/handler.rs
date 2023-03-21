@@ -7,7 +7,7 @@ use crate::{
     },
     database::Database,
     error::QueryError,
-    extract::{Query, SizedJson, TokenData},
+    extract::{Json, Query, TokenData},
     mail,
     model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
@@ -131,7 +131,7 @@ pub async fn create(
     State(hibp): State<Hibp>,
     State(mail): State<mail::Client>,
     State(config): State<TokenConfig>,
-    SizedJson(body): SizedJson<CreateRequest>,
+    Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -183,7 +183,7 @@ pub async fn update(
     State(db): State<Database>,
     State(mail): State<mail::Client>,
     State(config): State<TokenConfig>,
-    SizedJson(body): SizedJson<UpdateRequest>,
+    Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserWrite) && claims.sub != id {
         return Err(AuthenticationError::InsufficientPermission.into());

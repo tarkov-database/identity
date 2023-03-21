@@ -5,7 +5,7 @@ use crate::{
     },
     database::Database,
     error::Error,
-    extract::{SizedJson, TokenData},
+    extract::{Json, TokenData},
     model::Response,
     session::{Scope, SessionClaims, SessionError},
     user::UserError,
@@ -36,7 +36,7 @@ pub struct CreateRequest {
 pub async fn create(
     State(db): State<Database>,
     State(config): State<TokenConfig>,
-    SizedJson(body): SizedJson<CreateRequest>,
+    Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<SessionResponse>> {
     let user = match db.get_user(doc! {"email": body.email }).await {
         Ok(u) => u,

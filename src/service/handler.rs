@@ -2,7 +2,7 @@ use crate::{
     authentication::AuthenticationError,
     database::Database,
     error::QueryError,
-    extract::{Query, SizedJson, TokenData},
+    extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
     utils::crypto::Aead256,
@@ -11,6 +11,7 @@ use crate::{
 use super::{ServiceDocument, ServiceError};
 
 use axum::extract::{Path, State};
+use base64::Engine;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
@@ -96,14 +97,17 @@ pub async fn create(
     TokenData(claims): TokenData<SessionClaims>,
     State(db): State<Database>,
     State(enc): State<Aead256>,
-    SizedJson(body): SizedJson<CreateRequest>,
+    Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let secret = if let Some(s) = body.secret {
-        base64::encode_config(enc.encrypt(s), base64::STANDARD).into()
+        let secret_enc = enc.encrypt(s);
+        base64::engine::general_purpose::STANDARD
+            .encode(secret_enc)
+            .into()
     } else {
         None
     };
@@ -138,7 +142,7 @@ pub async fn update(
     TokenData(claims): TokenData<SessionClaims>,
     State(db): State<Database>,
     State(enc): State<Aead256>,
-    SizedJson(body): SizedJson<UpdateRequest>,
+    Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -170,7 +174,8 @@ pub async fn update(
         doc.insert("audience", v);
     }
     if let Some(s) = body.secret {
-        let secret = base64::encode_config(enc.encrypt(s), base64::STANDARD);
+        let secret = enc.encrypt(s);
+        let secret = base64::engine::general_purpose::STANDARD.encode(secret);
         doc.insert("secret", secret);
     }
     if let Some(v) = body.scope {

@@ -4,7 +4,7 @@ use crate::{
         token::TokenConfig,
     },
     database::Database,
-    extract::{Query, SizedJson, TokenData},
+    extract::{Json, Query, TokenData},
     mail,
     model::Status,
     user::{Role, UserDocument, UserError},
@@ -32,7 +32,7 @@ pub async fn register(
     State(hibp): State<Hibp>,
     State(mail): State<mail::Client>,
     State(config): State<TokenConfig>,
-    SizedJson(body): SizedJson<RegisterRequest>,
+    Json(body): Json<RegisterRequest>,
 ) -> crate::Result<Status> {
     let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
 
@@ -129,7 +129,7 @@ pub struct ResetRequest {
 pub async fn reset_password(
     TokenData(claims): TokenData<ActionClaims>,
     State(db): State<Database>,
-    SizedJson(body): SizedJson<ResetRequest>,
+    Json(body): Json<ResetRequest>,
 ) -> crate::Result<Status> {
     if claims.r#type != ActionType::Reset {
         return Err(ActionError::InvalidToken.into());

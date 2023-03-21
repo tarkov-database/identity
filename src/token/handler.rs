@@ -5,7 +5,7 @@ use crate::{
     },
     client::ClientError,
     database::Database,
-    extract::{SizedJson, TokenData},
+    extract::{Json, TokenData},
     model::Response,
     session::SessionClaims,
     token::{ClientClaims, ServiceClaims},
@@ -16,6 +16,7 @@ use crate::{
 use std::iter::FromIterator;
 
 use axum::extract::State;
+use base64::Engine;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::{encode, EncodingKey};
@@ -48,7 +49,8 @@ pub async fn get(
     let header = jsonwebtoken::Header::new(config.alg);
 
     let key = if let Some(s) = svc.secret {
-        let secret = enc.decrypt(base64::decode_config(&s, base64::STANDARD).unwrap());
+        let secret = base64::engine::general_purpose::STANDARD.decode(s).unwrap();
+        let secret = enc.decrypt(&secret);
         EncodingKey::from_secret(&secret)
     } else {
         config.enc_key
@@ -84,7 +86,7 @@ pub async fn create(
     TokenData(claims): TokenData<SessionClaims>,
     State(db): State<Database>,
     State(config): State<TokenConfig>,
-    SizedJson(body): SizedJson<CreateRequest>,
+    Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<TokenResponse>> {
     let client_id = ObjectId::parse_str(&claims.sub).map_err(|_| ClientError::InvalidId)?;
     let user_id = ObjectId::parse_str(&claims.sub).map_err(|_| UserError::InvalidId)?;
