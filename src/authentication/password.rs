@@ -42,7 +42,7 @@ pub fn hash_password<S: AsRef<[u8]>>(password: S) -> A2Result<String> {
 
     let argon2 = Argon2::new(ALGO, VERSION, params);
 
-    let hash = argon2.hash_password(password.as_ref(), salt.as_ref())?;
+    let hash = argon2.hash_password(password.as_ref(), &salt)?;
 
     Ok(hash.to_string())
 }

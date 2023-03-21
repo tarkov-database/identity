@@ -55,7 +55,7 @@ mongodb = { version = "2.4", default-features = false, features = [
 futures = { version = "0.3", default-features = false, features = [
   "async-await",
 ] }
-argon2 = "0.4"
+argon2 = "0.5"
 aes-gcm-siv = "0.11"
 rand = { version = "0.8", features = ["std"] }
 sha-1 = "0.10"
