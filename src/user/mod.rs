@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub use routes::routes;
 
-#[derive(Debug, PartialEq, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum UserError {
     #[error("user not found")]
     NotFound,
@@ -106,7 +106,7 @@ pub struct SessionDocument {
     pub date: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
 pub enum Connection {
     #[serde(rename_all = "camelCase")]

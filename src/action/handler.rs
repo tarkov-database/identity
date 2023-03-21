@@ -4,7 +4,7 @@ use crate::{
         token::TokenConfig,
     },
     database::Database,
-    extract::{Query, SizedJson, TokenData},
+    extract::{Json, Query, TokenData},
     mail,
     model::Status,
     user::{Role, UserDocument, UserError},
@@ -13,7 +13,7 @@ use crate::{
 
 use super::{send_reset_mail, send_verification_mail, ActionClaims, ActionError, ActionType};
 
-use axum::extract::Extension;
+use axum::extract::State;
 use chrono::Utc;
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId};
@@ -27,12 +27,12 @@ pub struct RegisterRequest {
 }
 
 pub async fn register(
-    SizedJson(body): SizedJson<RegisterRequest>,
-    Extension(db): Extension<Database>,
-    Extension(global): Extension<GlobalConfig>,
-    Extension(hibp): Extension<Hibp>,
-    Extension(mail): Extension<mail::Client>,
-    Extension(config): Extension<TokenConfig>,
+    State(db): State<Database>,
+    State(global): State<GlobalConfig>,
+    State(hibp): State<Hibp>,
+    State(mail): State<mail::Client>,
+    State(config): State<TokenConfig>,
+    Json(body): Json<RegisterRequest>,
 ) -> crate::Result<Status> {
     let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
 
@@ -74,7 +74,7 @@ pub async fn register(
 
 pub async fn verify_email(
     TokenData(claims): TokenData<ActionClaims>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Status> {
     if claims.r#type != ActionType::Verify {
         return Err(ActionError::InvalidToken.into());
@@ -106,9 +106,9 @@ pub struct ResetOptions {
 
 pub async fn request_reset(
     Query(opts): Query<ResetOptions>,
-    Extension(db): Extension<Database>,
-    Extension(mail): Extension<mail::Client>,
-    Extension(config): Extension<TokenConfig>,
+    State(db): State<Database>,
+    State(mail): State<mail::Client>,
+    State(config): State<TokenConfig>,
 ) -> crate::Result<Status> {
     let user = db.get_user(doc! { "email": opts.email }).await?;
 
@@ -128,8 +128,8 @@ pub struct ResetRequest {
 
 pub async fn reset_password(
     TokenData(claims): TokenData<ActionClaims>,
-    SizedJson(body): SizedJson<ResetRequest>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
+    Json(body): Json<ResetRequest>,
 ) -> crate::Result<Status> {
     if claims.r#type != ActionType::Reset {
         return Err(ActionError::InvalidToken.into());

@@ -5,13 +5,13 @@ use crate::{
     },
     database::Database,
     error::Error,
-    extract::{SizedJson, TokenData},
+    extract::{Json, TokenData},
     model::Response,
     session::{Scope, SessionClaims, SessionError},
     user::UserError,
 };
 
-use axum::extract::Extension;
+use axum::extract::State;
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId};
@@ -34,9 +34,9 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    SizedJson(body): SizedJson<CreateRequest>,
-    Extension(db): Extension<Database>,
-    Extension(config): Extension<TokenConfig>,
+    State(db): State<Database>,
+    State(config): State<TokenConfig>,
+    Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<SessionResponse>> {
     let user = match db.get_user(doc! {"email": body.email }).await {
         Ok(u) => u,
@@ -83,8 +83,8 @@ pub async fn create(
 
 pub async fn refresh(
     TokenData(claims): TokenData<SessionClaims>,
-    Extension(db): Extension<Database>,
-    Extension(config): Extension<TokenConfig>,
+    State(db): State<Database>,
+    State(config): State<TokenConfig>,
 ) -> crate::Result<Response<SessionResponse>> {
     let user_id = ObjectId::parse_str(&claims.sub).unwrap();
 

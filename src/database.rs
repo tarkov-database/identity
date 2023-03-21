@@ -1,5 +1,6 @@
-use crate::Result;
+use crate::{AppState, Result};
 
+use axum::extract::FromRef;
 use mongodb::{options::ClientOptions, Client, Collection};
 
 #[derive(Debug, Clone)]
@@ -20,5 +21,11 @@ impl Database {
 
     pub fn collection<T>(&self, name: &str) -> Collection<T> {
         self.client.database(&self.db_name).collection(name)
+    }
+}
+
+impl FromRef<AppState> for Database {
+    fn from_ref(state: &AppState) -> Self {
+        state.database.clone()
     }
 }

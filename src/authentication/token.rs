@@ -1,5 +1,6 @@
-use crate::{error, model::Status};
+use crate::{error, model::Status, AppState};
 
+use axum::extract::FromRef;
 use hyper::StatusCode;
 use jsonwebtoken::{
     errors::{Error as JwtError, ErrorKind},
@@ -107,5 +108,11 @@ impl TokenConfig {
             dec_key: DecodingKey::from_secret(secret.as_ref()),
             validation,
         }
+    }
+}
+
+impl FromRef<AppState> for TokenConfig {
+    fn from_ref(state: &AppState) -> Self {
+        state.token_config.clone()
     }
 }

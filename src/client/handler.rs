@@ -2,7 +2,7 @@ use crate::{
     authentication::AuthenticationError,
     database::Database,
     error::QueryError,
-    extract::{Query, SizedJson, TokenData},
+    extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
     service::ServiceError,
     session::{self, SessionClaims},
@@ -11,7 +11,7 @@ use crate::{
 
 use super::{ClientDocument, ClientError};
 
-use axum::extract::{Extension, Path};
+use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, TimeZone, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
@@ -62,7 +62,7 @@ pub async fn list(
     TokenData(claims): TokenData<SessionClaims>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Response<List<ClientResponse>>> {
     let user = if !claims.scope.contains(&session::Scope::ClientRead) {
         Some(&claims.sub)
@@ -87,7 +87,7 @@ pub async fn list(
 pub async fn get_by_id(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Response<ClientResponse>> {
     let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
@@ -113,8 +113,8 @@ pub struct CreateRequest {
 
 pub async fn create(
     TokenData(claims): TokenData<SessionClaims>,
-    SizedJson(body): SizedJson<CreateRequest>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
+    Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<ClientResponse>> {
     let user_id = if let Some(id) = body.user {
         if !claims.scope.contains(&session::Scope::ClientWrite) && claims.sub != id {
@@ -157,8 +157,8 @@ pub struct UpdateRequest {
 pub async fn update(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
-    SizedJson(body): SizedJson<UpdateRequest>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
+    Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<ClientResponse>> {
     let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
@@ -196,7 +196,7 @@ pub async fn update(
 pub async fn delete(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&session::Scope::ClientWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());

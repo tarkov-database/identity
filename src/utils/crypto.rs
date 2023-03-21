@@ -1,7 +1,7 @@
-use aes_gcm_siv::{
-    aead::{Aead, NewAead},
-    Aes256GcmSiv, Key, Nonce,
-};
+use crate::AppState;
+
+use aes_gcm_siv::{aead::Aead, Aes256GcmSiv, KeyInit, Nonce};
+use axum::extract::FromRef;
 use rand::{distributions::Alphanumeric, Rng};
 
 #[derive(Debug, thiserror::Error)]
@@ -23,14 +23,8 @@ impl Aead256 {
     where
         K: AsRef<[u8]>,
     {
-        let key = key.as_ref();
-
-        if key.len() != Self::KEY_SIZE {
-            return Err(CryptoError::InvalidKeySize);
-        }
-
-        let key = Key::from_slice(key);
-        let cipher = Aes256GcmSiv::new(key);
+        let cipher =
+            Aes256GcmSiv::new_from_slice(key.as_ref()).map_err(|_| CryptoError::InvalidKeySize)?;
 
         Ok(Self { cipher })
     }
@@ -65,6 +59,12 @@ impl Aead256 {
         let nonce = Nonce::from_slice(&nc[..Self::NONCE_SIZE]);
 
         self.cipher.decrypt(nonce, &nc[Self::NONCE_SIZE..]).unwrap()
+    }
+}
+
+impl FromRef<AppState> for Aead256 {
+    fn from_ref(state: &AppState) -> Self {
+        state.aead.clone()
     }
 }
 

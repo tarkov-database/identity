@@ -2,7 +2,7 @@ use crate::{
     authentication::AuthenticationError,
     database::Database,
     error::QueryError,
-    extract::{Query, SizedJson, TokenData},
+    extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
     utils::crypto::Aead256,
@@ -10,7 +10,8 @@ use crate::{
 
 use super::{ServiceDocument, ServiceError};
 
-use axum::extract::{Extension, Path};
+use axum::extract::{Path, State};
+use base64::Engine;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
@@ -54,7 +55,7 @@ pub async fn list(
     TokenData(claims): TokenData<SessionClaims>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Response<List<ServiceResponse>>> {
     if !claims.scope.contains(&session::Scope::ServiceRead) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -69,7 +70,7 @@ pub async fn list(
 pub async fn get_by_id(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&session::Scope::ServiceRead) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -94,16 +95,19 @@ pub struct CreateRequest {
 
 pub async fn create(
     TokenData(claims): TokenData<SessionClaims>,
-    SizedJson(body): SizedJson<CreateRequest>,
-    Extension(db): Extension<Database>,
-    Extension(enc): Extension<Aead256>,
+    State(db): State<Database>,
+    State(enc): State<Aead256>,
+    Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
     let secret = if let Some(s) = body.secret {
-        base64::encode_config(enc.encrypt(s), base64::STANDARD).into()
+        let secret_enc = enc.encrypt(s);
+        base64::engine::general_purpose::STANDARD
+            .encode(secret_enc)
+            .into()
     } else {
         None
     };
@@ -136,9 +140,9 @@ pub struct UpdateRequest {
 pub async fn update(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
-    SizedJson(body): SizedJson<UpdateRequest>,
-    Extension(db): Extension<Database>,
-    Extension(enc): Extension<Aead256>,
+    State(db): State<Database>,
+    State(enc): State<Aead256>,
+    Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -170,7 +174,8 @@ pub async fn update(
         doc.insert("audience", v);
     }
     if let Some(s) = body.secret {
-        let secret = base64::encode_config(enc.encrypt(s), base64::STANDARD);
+        let secret = enc.encrypt(s);
+        let secret = base64::engine::general_purpose::STANDARD.encode(secret);
         doc.insert("secret", secret);
     }
     if let Some(v) = body.scope {
@@ -191,7 +196,7 @@ pub async fn update(
 pub async fn delete(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&session::Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());

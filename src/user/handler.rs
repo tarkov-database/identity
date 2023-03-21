@@ -7,7 +7,7 @@ use crate::{
     },
     database::Database,
     error::QueryError,
-    extract::{Query, SizedJson, TokenData},
+    extract::{Json, Query, TokenData},
     mail,
     model::{List, ListOptions, Response, Status},
     session::{self, SessionClaims},
@@ -16,7 +16,7 @@ use crate::{
 
 use super::{Connection, Role, SessionDocument, UserDocument, UserError};
 
-use axum::extract::{Extension, Path};
+use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_bson, to_document, Document};
@@ -84,7 +84,7 @@ pub async fn list(
     TokenData(claims): TokenData<SessionClaims>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Response<List<UserResponse>>> {
     let filter = if !claims.scope.contains(&session::Scope::UserRead) {
         doc! { "_id": ObjectId::parse_str(&claims.sub).unwrap() }
@@ -102,7 +102,7 @@ pub async fn list(
 pub async fn get_by_id(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserRead) && claims.sub != id {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -126,12 +126,12 @@ pub struct CreateRequest {
 
 pub async fn create(
     TokenData(claims): TokenData<SessionClaims>,
-    SizedJson(body): SizedJson<CreateRequest>,
-    Extension(db): Extension<Database>,
-    Extension(global): Extension<GlobalConfig>,
-    Extension(hibp): Extension<Hibp>,
-    Extension(mail): Extension<mail::Client>,
-    Extension(config): Extension<TokenConfig>,
+    State(db): State<Database>,
+    State(global): State<GlobalConfig>,
+    State(hibp): State<Hibp>,
+    State(mail): State<mail::Client>,
+    State(config): State<TokenConfig>,
+    Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -180,10 +180,10 @@ pub struct UpdateRequest {
 pub async fn update(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
-    SizedJson(body): SizedJson<UpdateRequest>,
-    Extension(db): Extension<Database>,
-    Extension(mail): Extension<mail::Client>,
-    Extension(config): Extension<TokenConfig>,
+    State(db): State<Database>,
+    State(mail): State<mail::Client>,
+    State(config): State<TokenConfig>,
+    Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&session::Scope::UserWrite) && claims.sub != id {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -223,7 +223,7 @@ pub async fn update(
 pub async fn delete(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
-    Extension(db): Extension<Database>,
+    State(db): State<Database>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&session::Scope::UserWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
