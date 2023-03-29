@@ -1,6 +1,8 @@
 use crate::{
     action::ActionError,
-    authentication::{token::TokenError as AuthTokenError, AuthenticationError},
+    authentication::{
+        password::PasswordError, token::TokenError as AuthTokenError, AuthenticationError,
+    },
     client::ClientError,
     model::Status,
     service::ServiceError,
@@ -49,6 +51,8 @@ pub enum Error {
     Reqwest(#[from] reqwest::Error),
     #[error("Hyper error: {0}")]
     Hyper(#[from] hyper::Error),
+    #[error("password error: {0}")]
+    Password(#[from] PasswordError),
 }
 
 impl axum::response::IntoResponse for Error {
@@ -64,6 +68,7 @@ impl axum::response::IntoResponse for Error {
             Error::Token(e) => e.error_response(),
             Error::Sso(e) => e.error_response(),
             Error::AuthToken(e) => e.error_response(),
+            Error::Password(e) => AuthenticationError::from(e).error_response(),
             _ => {
                 error!(error = %self, "internal error");
                 Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")

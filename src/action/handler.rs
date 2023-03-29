@@ -1,8 +1,5 @@
 use crate::{
-    authentication::{
-        password::{self, Hibp},
-        token::TokenConfig,
-    },
+    authentication::{password::Password, token::TokenConfig},
     database::Database,
     extract::{Json, Query, TokenData},
     mail,
@@ -29,7 +26,7 @@ pub struct RegisterRequest {
 pub async fn register(
     State(db): State<Database>,
     State(global): State<GlobalConfig>,
-    State(hibp): State<Hibp>,
+    State(password): State<Password>,
     State(mail): State<mail::Client>,
     State(config): State<TokenConfig>,
     Json(body): Json<RegisterRequest>,
@@ -44,11 +41,7 @@ pub async fn register(
         return Err(UserError::AlreadyExists.into());
     }
 
-    let password_hash = password::validate_and_hash(&body.password)?;
-
-    if global.hibp_check_enabled {
-        hibp.check_password(&body.password).await?;
-    }
+    let password_hash = password.validate_and_hash(&body.password).await?;
 
     let roles = if global.is_editor_address(&body.email) {
         vec![Role::UserEditor]
@@ -59,7 +52,7 @@ pub async fn register(
     let user = UserDocument {
         id: ObjectId::new(),
         email: body.email,
-        password: Some(password_hash),
+        password: Some(password_hash.to_string()),
         roles,
         last_modified: Utc::now(),
         ..Default::default()
@@ -129,6 +122,7 @@ pub struct ResetRequest {
 pub async fn reset_password(
     TokenData(claims): TokenData<ActionClaims>,
     State(db): State<Database>,
+    State(password): State<Password>,
     Json(body): Json<ResetRequest>,
 ) -> crate::Result<Status> {
     if claims.r#type != ActionType::Reset {
@@ -137,9 +131,9 @@ pub async fn reset_password(
 
     let user_id = ObjectId::parse_str(claims.sub).unwrap();
 
-    let password_hash = password::validate_and_hash(&body.password)?;
+    let password_hash = password.validate_and_hash(&body.password).await?;
 
-    db.update_user_by_id(user_id, doc! { "password": password_hash })
+    db.update_user_by_id(user_id, doc! { "password": password_hash.to_string() })
         .await?;
 
     Ok(Status::new(StatusCode::OK, "new password set"))

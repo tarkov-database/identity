@@ -1,10 +1,6 @@
 use crate::{
     action::send_verification_mail,
-    authentication::{
-        password::{self, Hibp},
-        token::TokenConfig,
-        AuthenticationError,
-    },
+    authentication::{password::Password, token::TokenConfig, AuthenticationError},
     database::Database,
     error::QueryError,
     extract::{Json, Query, TokenData},
@@ -128,7 +124,7 @@ pub async fn create(
     TokenData(claims): TokenData<SessionClaims>,
     State(db): State<Database>,
     State(global): State<GlobalConfig>,
-    State(hibp): State<Hibp>,
+    State(password): State<Password>,
     State(mail): State<mail::Client>,
     State(config): State<TokenConfig>,
     Json(body): Json<CreateRequest>,
@@ -147,16 +143,12 @@ pub async fn create(
         return Err(UserError::AlreadyExists.into());
     }
 
-    let password_hash = password::validate_and_hash(&body.password)?;
-
-    if global.hibp_check_enabled {
-        hibp.check_password(&body.password).await?;
-    }
+    let password_hash = password.validate_and_hash(&body.password).await?;
 
     let user = UserDocument {
         id: ObjectId::new(),
         email: body.email,
-        password: Some(password_hash),
+        password: Some(password_hash.to_string()),
         roles: body.roles,
         ..Default::default()
     };
@@ -181,6 +173,7 @@ pub async fn update(
     Path(id): Path<String>,
     TokenData(claims): TokenData<SessionClaims>,
     State(db): State<Database>,
+    State(password): State<Password>,
     State(mail): State<mail::Client>,
     State(config): State<TokenConfig>,
     Json(body): Json<UpdateRequest>,
@@ -198,7 +191,8 @@ pub async fn update(
         doc.insert("email", v);
     }
     if let Some(v) = body.password {
-        let hash = password::validate_and_hash(&v)?;
+        let hash = password.validate_and_hash(&v).await?;
+
         doc.insert("password", hash);
     }
 

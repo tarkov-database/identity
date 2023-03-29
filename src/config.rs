@@ -64,7 +64,6 @@ pub struct AppConfig {
 
 #[derive(Debug, Clone)]
 pub struct GlobalConfig {
-    pub hibp_check_enabled: bool,
     pub allowed_domains: Vec<String>,
     pub editor_mail_addrs: Vec<String>,
 }

@@ -1,6 +1,6 @@
 use crate::{
     authentication::{
-        password,
+        password::Password,
         token::{TokenClaims, TokenConfig},
     },
     database::Database,
@@ -36,6 +36,7 @@ pub struct CreateRequest {
 pub async fn create(
     State(db): State<Database>,
     State(config): State<TokenConfig>,
+    State(password): State<Password>,
     Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<SessionResponse>> {
     let user = match db.get_user(doc! {"email": body.email }).await {
@@ -49,7 +50,7 @@ pub async fn create(
         },
     };
 
-    let password = user.password.ok_or(SessionError::BadCredentials)?;
+    let password_hash = user.password.ok_or(SessionError::BadCredentials)?;
 
     if !user.verified {
         return Err(SessionError::NotAuthorized("user is not verified".to_string()).into());
@@ -60,7 +61,7 @@ pub async fn create(
         );
     }
 
-    if password::verify_password(&body.password, &password).is_err() {
+    if password.verify(&body.password, &password_hash).is_err() {
         return Err(SessionError::BadCredentials.into());
     }
 

@@ -16,7 +16,10 @@ mod user;
 mod utils;
 
 use crate::{
-    authentication::{password::Hibp, token::TokenConfig},
+    authentication::{
+        password::{Hasher, Hibp, Password},
+        token::TokenConfig,
+    },
     config::{AppConfig, GlobalConfig},
     database::Database,
     error::handle_error,
@@ -46,8 +49,8 @@ pub type Result<T> = std::result::Result<T, error::Error>;
 #[derive(Clone)]
 pub struct AppState {
     mail_client: mail::Client,
-    hibp_client: Hibp,
     database: Database,
+    password: Password,
     aead: Aead256,
     global_config: GlobalConfig,
     token_config: TokenConfig,
@@ -84,6 +87,7 @@ async fn main() -> Result<()> {
         TokenConfig::from_secret(app_config.jwt_secret.as_bytes(), app_config.jwt_audience);
     let aead = Aead256::new(app_config.crypto_key)?;
     let hibp = Hibp::with_client(client.clone());
+    let password = Password::new(Hasher::default(), hibp, app_config.hibp_check);
     let mail = mail::Client::new(
         app_config.mg_key,
         app_config.mg_region,
@@ -99,15 +103,14 @@ async fn main() -> Result<()> {
     )?;
     let global_config = GlobalConfig {
         allowed_domains: app_config.allowed_domains,
-        hibp_check_enabled: app_config.hibp_check,
         editor_mail_addrs: app_config.editor_mail_address,
     };
 
     let state = AppState {
         mail_client: mail,
-        hibp_client: hibp,
         database: db,
         aead,
+        password,
         global_config,
         token_config,
     };
