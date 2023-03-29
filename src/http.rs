@@ -26,7 +26,7 @@ impl Default for HttpClient {
         let client = reqwest::Client::builder()
             .https_only(true)
             .use_rustls_tls()
-            .max_tls_version(tls::Version::TLS_1_2)
+            .min_tls_version(tls::Version::TLS_1_2)
             .redirect(redirect::Policy::none())
             .tcp_keepalive(Self::KEEP_ALIVE_TIMEOUT)
             .timeout(Self::DEFAULT_TIMEOUT)
