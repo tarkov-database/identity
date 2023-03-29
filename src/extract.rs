@@ -88,10 +88,10 @@ where
 
         let token_data =
             jsonwebtoken::decode::<T>(bearer.token(), &config.dec_key, &config.validation)
-                .map_err(|e| AuthenticationError::from(TokenError::from(e)))?;
+                .map_err(TokenError::from)?;
 
         if token_data.claims.get_type() != &T::TOKEN_TYPE {
-            return Err(AuthenticationError::from(TokenError::WrongType).into());
+            return Err(TokenError::WrongType.into());
         }
 
         Ok(Self(token_data.claims))

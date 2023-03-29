@@ -1,4 +1,4 @@
-use crate::{http::HttpClient, AppState, Result};
+use crate::{error, http::HttpClient, model::Status, AppState, Result};
 
 use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -6,6 +6,7 @@ use argon2::{
 };
 
 use axum::extract::FromRef;
+use http::StatusCode;
 use passwords::{analyzer, scorer};
 use rand::rngs::OsRng;
 use reqwest::Url;
@@ -27,6 +28,32 @@ pub enum PasswordError {
     Pwned(u64),
     #[error("password hash error: {0}")]
     Hash(#[from] argon2::password_hash::Error),
+}
+
+impl error::ErrorResponse for PasswordError {
+    type Response = Status;
+
+    fn status_code(&self) -> StatusCode {
+        match self {
+            PasswordError::Mismatch => StatusCode::UNAUTHORIZED,
+            PasswordError::Invalid(_) | PasswordError::BadScore | PasswordError::Pwned(_) => {
+                StatusCode::BAD_REQUEST
+            }
+            PasswordError::Hash(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    fn error_response(&self) -> Self::Response {
+        let msg = match self.status_code() {
+            StatusCode::INTERNAL_SERVER_ERROR => {
+                error!(error = %self, "internal error");
+                "internal server error".to_string()
+            }
+            _ => self.to_string(),
+        };
+
+        Status::new(self.status_code(), msg)
+    }
 }
 
 #[derive(Clone)]

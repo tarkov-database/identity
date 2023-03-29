@@ -19,7 +19,7 @@ pub enum TokenError {
     WrongType,
     #[error("token is invalid")]
     Invalid,
-    #[error("Token could not be encoded: {0}")]
+    #[error("token could not be encoded: {0}")]
     EncodingFailed(JwtError),
 }
 
@@ -50,7 +50,15 @@ impl error::ErrorResponse for TokenError {
     }
 
     fn error_response(&self) -> Self::Response {
-        Status::new(self.status_code(), self.to_string())
+        let msg = match self.status_code() {
+            StatusCode::INTERNAL_SERVER_ERROR => {
+                error!(error = %self, "internal error");
+                "internal server error".to_string()
+            }
+            _ => self.to_string(),
+        };
+
+        Status::new(self.status_code(), msg)
     }
 }
 

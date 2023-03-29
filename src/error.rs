@@ -68,7 +68,7 @@ impl axum::response::IntoResponse for Error {
             Error::Token(e) => e.error_response(),
             Error::Sso(e) => e.error_response(),
             Error::AuthToken(e) => e.error_response(),
-            Error::Password(e) => AuthenticationError::from(e).error_response(),
+            Error::Password(e) => e.error_response(),
             _ => {
                 error!(error = %self, "internal error");
                 Status::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")

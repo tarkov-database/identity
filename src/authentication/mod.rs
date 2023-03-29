@@ -11,10 +11,6 @@ pub enum AuthenticationError {
     InsufficientPermission,
     #[error("header error: {0}")]
     InvalidHeader(String),
-    #[error("password error: {0}")]
-    Password(#[from] password::PasswordError),
-    #[error("token error: {0}")]
-    Token(#[from] token::TokenError),
 }
 
 impl error::ErrorResponse for AuthenticationError {
@@ -24,8 +20,6 @@ impl error::ErrorResponse for AuthenticationError {
         match self {
             AuthenticationError::InsufficientPermission => StatusCode::FORBIDDEN,
             AuthenticationError::InvalidHeader(_) => StatusCode::UNAUTHORIZED,
-            AuthenticationError::Token(_) => StatusCode::UNAUTHORIZED,
-            AuthenticationError::Password(_) => StatusCode::BAD_REQUEST,
         }
     }
 
