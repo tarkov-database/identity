@@ -16,7 +16,6 @@ use crate::{
 use std::iter::FromIterator;
 
 use axum::extract::State;
-use base64::Engine;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::{encode, EncodingKey};
@@ -49,8 +48,7 @@ pub async fn get(
     let header = jsonwebtoken::Header::new(config.alg);
 
     let key = if let Some(s) = svc.secret {
-        let secret = base64::engine::general_purpose::STANDARD.decode(s).unwrap();
-        let secret = enc.decrypt(&secret);
+        let secret = enc.decrypt_b64(s)?;
         EncodingKey::from_secret(&secret)
     } else {
         config.enc_key

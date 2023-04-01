@@ -11,7 +11,6 @@ use crate::{
 use super::{ServiceDocument, ServiceError};
 
 use axum::extract::{Path, State};
-use base64::Engine;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
@@ -104,10 +103,7 @@ pub async fn create(
     }
 
     let secret = if let Some(s) = body.secret {
-        let secret_enc = enc.encrypt(s);
-        base64::engine::general_purpose::STANDARD
-            .encode(secret_enc)
-            .into()
+        enc.encrypt_b64(s).into()
     } else {
         None
     };
@@ -174,8 +170,7 @@ pub async fn update(
         doc.insert("audience", v);
     }
     if let Some(s) = body.secret {
-        let secret = enc.encrypt(s);
-        let secret = base64::engine::general_purpose::STANDARD.encode(secret);
+        let secret = enc.encrypt_b64(s);
         doc.insert("secret", secret);
     }
     if let Some(v) = body.scope {

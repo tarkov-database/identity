@@ -59,7 +59,7 @@ argon2 = { version = "0.5", features = ["std"] }
 aes-gcm-siv = "0.11"
 rand = { version = "0.8", features = ["std"] }
 sha-1 = "0.10"
-base64 = "0.21"
+base64ct = { version = "1", features = ["std"] }
 jsonwebtoken = "8"
 passwords = "3"
 envy = "0.4"

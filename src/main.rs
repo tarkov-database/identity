@@ -85,7 +85,7 @@ async fn main() -> Result<()> {
     let client = HttpClient::default();
     let token_config =
         TokenConfig::from_secret(app_config.jwt_secret.as_bytes(), app_config.jwt_audience);
-    let aead = Aead256::new(app_config.crypto_key)?;
+    let aead = Aead256::new_from_b64(app_config.crypto_key)?;
     let hibp = Hibp::with_client(client.clone());
     let password = Password::new(Hasher::default(), hibp, app_config.hibp_check);
     let mail = mail::Client::new(
