@@ -28,7 +28,7 @@ use crate::{
     utils::crypto::Aead256,
 };
 
-use std::{env, iter::once, net::SocketAddr, time::Duration};
+use std::{iter::once, net::SocketAddr, time::Duration};
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::AUTHORIZATION;
@@ -39,6 +39,7 @@ use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     LatencyUnit,
 };
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(feature = "jemalloc")]
 #[global_allocator]
@@ -58,10 +59,13 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "info");
-    }
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "RUST_LOG=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     let prefix = envy::prefixed("IDENTITY_");
 
