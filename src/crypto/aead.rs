@@ -6,7 +6,7 @@ use base64ct::{Base64, Encoding};
 use rand::{distributions::Alphanumeric, Rng};
 
 #[derive(Debug, thiserror::Error)]
-pub enum CryptoError {
+pub enum AeadError {
     #[error("key has an invalid size")]
     InvalidKeySize,
     #[error("decoding error: {0}")]
@@ -23,13 +23,13 @@ impl Aead256 {
     const NONCE_SIZE: usize = 96 / 8;
 
     pub fn new_from_b64<S: AsRef<str>>(key: S) -> Result<Self> {
-        let key = Base64::decode_vec(key.as_ref()).map_err(CryptoError::from)?;
+        let key = Base64::decode_vec(key.as_ref()).map_err(AeadError::from)?;
 
         Self::new(&key)
     }
 
     pub fn new(key: &[u8]) -> Result<Self> {
-        let cipher = Aes256GcmSiv::new_from_slice(key).map_err(|_| CryptoError::InvalidKeySize)?;
+        let cipher = Aes256GcmSiv::new_from_slice(key).map_err(|_| AeadError::InvalidKeySize)?;
 
         Ok(Self { cipher })
     }
@@ -79,7 +79,7 @@ impl Aead256 {
     where
         S: AsRef<str>,
     {
-        let nc = Base64::decode_vec(input.as_ref()).map_err(CryptoError::from)?;
+        let nc = Base64::decode_vec(input.as_ref()).map_err(AeadError::from)?;
         let output = self.decrypt(nc);
 
         Ok(output)

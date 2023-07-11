@@ -24,7 +24,7 @@ pub enum PasswordError {
     Invalid(String),
     #[error("password is too weak")]
     BadScore,
-    #[error("password has been pwned (compromised), {0} times")]
+    #[error("password has been compromised, {0} times")]
     Pwned(u64),
     #[error("password hash error: {0}")]
     Hash(#[from] argon2::password_hash::Error),
@@ -151,6 +151,7 @@ impl FromRef<AppState> for Password {
     }
 }
 
+// TODO: move to crypto module
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct Hasher {
@@ -205,6 +206,13 @@ impl Default for Hasher {
             Some(Self::OUTPUT_LEN),
         )
         .unwrap();
+
+        Self::from(params)
+    }
+}
+
+impl From<Params> for Hasher {
+    fn from(params: Params) -> Self {
         let argon2 = Argon2::new(Self::ALGO, Self::VERSION, params);
 
         Self { context: argon2 }

@@ -2,6 +2,7 @@ mod handler;
 mod routes;
 
 use crate::{
+    auth::token::{Token, TokenType, TokenValidation, LEEWAY},
     database::Database,
     error,
     model::{ListOptions, Status},
@@ -9,16 +10,17 @@ use crate::{
     Result,
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{serde::ts_seconds, DateTime, Utc};
 use futures::stream::TryStreamExt;
 use hyper::StatusCode;
 use mongodb::{
-    bson::{doc, oid::ObjectId, serde_helpers::chrono_datetime_as_bson_datetime, Document},
+    bson::{self, doc, oid::ObjectId, serde_helpers::chrono_datetime_as_bson_datetime, Document},
     options::{FindOneAndUpdateOptions, FindOptions, ReturnDocument},
 };
 use serde::{Deserialize, Serialize};
 
 pub use routes::routes;
+use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -28,6 +30,8 @@ pub enum ClientError {
     InvalidId,
     #[error("client is locked")]
     Locked,
+    #[error("token expiration is invalid")]
+    InvalidExpiration,
 }
 
 impl error::ErrorResponse for ClientError {
@@ -36,7 +40,7 @@ impl error::ErrorResponse for ClientError {
     fn status_code(&self) -> StatusCode {
         match self {
             ClientError::NotFound => StatusCode::NOT_FOUND,
-            ClientError::InvalidId => StatusCode::BAD_REQUEST,
+            ClientError::InvalidId | ClientError::InvalidExpiration => StatusCode::BAD_REQUEST,
             ClientError::Locked => StatusCode::FORBIDDEN,
         }
     }
@@ -55,11 +59,34 @@ pub struct ClientDocument {
     pub service: ObjectId,
     pub name: String,
     pub scope: Vec<String>,
-    pub unlocked: bool,
-    #[serde(with = "chrono_datetime_as_bson_datetime")]
-    pub last_issued: DateTime<Utc>,
+    pub locked: bool,
+    pub token: Option<TokenDocument>,
+    #[serde(default, with = "chrono_datetime_as_bson_datetime")]
+    pub last_used: DateTime<Utc>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub last_modified: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    pub created: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenDocument {
+    pub id: bson::Uuid,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    pub expires: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    pub issued: DateTime<Utc>,
+}
+
+impl TokenDocument {
+    pub fn new(expires: DateTime<Utc>) -> Self {
+        Self {
+            id: Uuid::new_v4().into(),
+            expires,
+            issued: Utc::now(),
+        }
+    }
 }
 
 const COLLECTION: &str = "clients";
@@ -179,9 +206,10 @@ impl Database {
         Ok(())
     }
 
-    pub async fn set_client_issued(&self, id: ObjectId) -> Result<()> {
+    async fn set_client_token(&self, id: ObjectId, token: TokenDocument) -> Result<()> {
         let doc = doc! {
-            "$currentDate": { "lastIssued": true },
+            "$currentDate": { "lastModified": true },
+            "$set": { "token": bson::to_bson(&token).unwrap() },
         };
 
         let result = self
@@ -194,5 +222,81 @@ impl Database {
         }
 
         Ok(())
+    }
+
+    pub async fn set_client_as_used(&self, id: ObjectId) -> Result<()> {
+        let doc = doc! {
+            "$currentDate": { "lastUsed": true },
+        };
+
+        let result = self
+            .collection::<ClientDocument>(COLLECTION)
+            .update_one(doc! { "_id": id }, doc, None)
+            .await?;
+
+        if result.matched_count == 0 {
+            return Err(ClientError::NotFound.into());
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientClaims {
+    pub jti: Uuid,
+    pub aud: String,
+    #[serde(with = "ts_seconds")]
+    pub exp: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub nbf: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub iat: DateTime<Utc>,
+    pub sub: String,
+    pub iss: String,
+}
+
+impl ClientClaims {
+    const AUDIENCE_CLIENT: &str = "identity/client";
+
+    fn new(id: impl Into<Uuid>, sub: &str, iss: &str, exp: DateTime<Utc>) -> Self {
+        Self {
+            jti: id.into(),
+            aud: Self::AUDIENCE_CLIENT.to_string(),
+            exp,
+            nbf: Utc::now(),
+            iat: Utc::now(),
+            sub: sub.into(),
+            iss: iss.into(),
+        }
+    }
+}
+
+impl Token for ClientClaims {
+    const TYPE: TokenType = TokenType::Refresh;
+
+    fn expires_at(&self) -> DateTime<Utc> {
+        self.exp
+    }
+
+    fn not_before(&self) -> DateTime<Utc> {
+        self.nbf
+    }
+
+    fn issued_at(&self) -> DateTime<Utc> {
+        self.iat
+    }
+}
+
+impl TokenValidation for ClientClaims {
+    fn validation(alg: jsonwebtoken::Algorithm) -> jsonwebtoken::Validation {
+        let mut validation = jsonwebtoken::Validation::new(alg);
+        validation.leeway = LEEWAY;
+        validation.set_required_spec_claims(&["jti", "exp", "nbf", "sub", "aud", "iat"]);
+        validation.set_audience(&[Self::AUDIENCE_CLIENT]);
+        validation.validate_exp = true;
+        validation.validate_nbf = true;
+        validation
     }
 }

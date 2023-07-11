@@ -1,6 +1,6 @@
 use crate::{
-    authentication::{
-        token::{TokenClaims, TokenConfig, TokenError},
+    auth::{
+        token::{verify::TokenVerifier, HeaderExt, Token, TokenError, TokenValidation},
         AuthenticationError,
     },
     error::Error,
@@ -65,19 +65,19 @@ where
 
 pub struct TokenData<T>(pub T)
 where
-    T: TokenClaims;
+    T: Token;
 
 #[async_trait]
 impl<S, T> FromRequestParts<S> for TokenData<T>
 where
-    TokenConfig: FromRef<S>,
-    T: TokenClaims,
+    TokenVerifier: FromRef<S>,
+    T: Token + TokenValidation + DeserializeOwned + Send,
     S: Send + Sync,
 {
     type Rejection = Error;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let config = TokenConfig::from_ref(state);
+        let verifier = TokenVerifier::from_ref(state);
 
         let TypedHeader(Authorization(bearer)) =
             TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state)
@@ -86,15 +86,58 @@ where
                     AuthenticationError::InvalidHeader("authorization header missing".to_string())
                 })?;
 
-        let token_data =
-            jsonwebtoken::decode::<T>(bearer.token(), &config.dec_key, &config.validation)
-                .map_err(TokenError::from)?;
+        let token = bearer.token();
+        let (_, data) = verifier.verify::<T>(token).await?;
 
-        if token_data.claims.get_type() != &T::TOKEN_TYPE {
-            return Err(TokenError::WrongType.into());
-        }
+        Ok(Self(data))
+    }
+}
 
-        Ok(Self(token_data.claims))
+pub enum EitherTokenData<L, R>
+where
+    L: Token,
+    R: Token,
+{
+    Left(L),
+    Right(R),
+}
+
+#[async_trait]
+impl<L, R, S> FromRequestParts<S> for EitherTokenData<L, R>
+where
+    TokenVerifier: FromRef<S>,
+    L: Token + TokenValidation + DeserializeOwned + Send,
+    R: Token + TokenValidation + DeserializeOwned + Send,
+    S: Send + Sync,
+{
+    type Rejection = Error;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let verifier = TokenVerifier::from_ref(state);
+
+        let TypedHeader(Authorization(bearer)) =
+            TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state)
+                .await
+                .map_err(|_| {
+                    AuthenticationError::InvalidHeader("authorization header missing".to_string())
+                })?;
+
+        let token = bearer.token();
+        let header = jsonwebtoken::decode_header(token).map_err(TokenError::from)?;
+
+        let data = match header.token_type()? {
+            v if v == L::TYPE => {
+                let (_, data) = verifier.verify::<L>(token).await?;
+                EitherTokenData::Left(data)
+            }
+            v if v == R::TYPE => {
+                let (_, data) = verifier.verify::<R>(token).await?;
+                EitherTokenData::Right(data)
+            }
+            _ => return Err(TokenError::Invalid)?,
+        };
+
+        Ok(data)
     }
 }
 

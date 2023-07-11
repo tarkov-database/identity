@@ -1,12 +1,12 @@
 use crate::{
     action::send_verification_mail,
-    authentication::{password::Password, token::TokenConfig, AuthenticationError},
+    auth::{password::Password, token::sign::TokenSigner, AuthenticationError},
     database::Database,
     error::QueryError,
     extract::{Json, Query, TokenData},
     mail,
     model::{List, ListOptions, Response, Status},
-    session::{self, SessionClaims},
+    token::{AccessClaims, Scope},
     utils, GlobalConfig,
 };
 
@@ -17,6 +17,7 @@ use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_bson, to_document, Document};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +26,8 @@ pub struct UserResponse {
     pub email: String,
     pub roles: Vec<Role>,
     pub verified: bool,
+    pub can_login: bool,
+    pub locked: bool,
     pub connections: Vec<Connection>,
     pub last_sessions: Vec<SessionResponse>,
     #[serde(with = "ts_seconds")]
@@ -39,6 +42,8 @@ impl From<UserDocument> for UserResponse {
             id: doc.id.to_hex(),
             email: doc.email,
             verified: doc.verified,
+            can_login: doc.can_login,
+            locked: doc.locked,
             roles: doc.roles,
             connections: doc.connections,
             last_sessions: doc
@@ -55,13 +60,20 @@ impl From<UserDocument> for UserResponse {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionResponse {
+    pub id: Uuid,
     #[serde(with = "ts_seconds")]
-    pub date: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub issued: DateTime<Utc>,
 }
 
 impl From<SessionDocument> for SessionResponse {
     fn from(doc: SessionDocument) -> Self {
-        Self { date: doc.date }
+        Self {
+            id: doc.id.into(),
+            last_seen: doc.last_seen,
+            issued: doc.issued,
+        }
     }
 }
 
@@ -77,12 +89,12 @@ pub struct Filter {
 }
 
 pub async fn list(
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
     State(db): State<Database>,
 ) -> crate::Result<Response<List<UserResponse>>> {
-    let filter = if !claims.scope.contains(&session::Scope::UserRead) {
+    let filter = if !claims.scope.contains(&Scope::UserRead) {
         doc! { "_id": ObjectId::parse_str(&claims.sub).unwrap() }
     } else {
         to_document(&filter).unwrap()
@@ -97,10 +109,10 @@ pub async fn list(
 
 pub async fn get_by_id(
     Path(id): Path<String>,
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
 ) -> crate::Result<Response<UserResponse>> {
-    if !claims.scope.contains(&session::Scope::UserRead) && claims.sub != id {
+    if !claims.scope.contains(&Scope::UserRead) && claims.sub != id {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
@@ -121,15 +133,15 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
     State(global): State<GlobalConfig>,
     State(password): State<Password>,
     State(mail): State<mail::Client>,
-    State(config): State<TokenConfig>,
+    State(signer): State<TokenSigner>,
     Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<UserResponse>> {
-    if !claims.scope.contains(&session::Scope::UserWrite) {
+    if !claims.scope.contains(&Scope::UserWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
@@ -148,14 +160,14 @@ pub async fn create(
     let user = UserDocument {
         id: ObjectId::new(),
         email: body.email,
-        password: Some(password_hash.to_string()),
+        password: Some(password_hash),
         roles: body.roles,
         ..Default::default()
     };
 
     db.insert_user(&user).await?;
 
-    send_verification_mail(&user.email, &user.id.to_hex(), mail, config).await?;
+    send_verification_mail(user.email.clone(), user.id.to_hex(), mail, signer).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, user.into()))
 }
@@ -171,14 +183,14 @@ pub struct UpdateRequest {
 
 pub async fn update(
     Path(id): Path<String>,
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
     State(password): State<Password>,
     State(mail): State<mail::Client>,
-    State(config): State<TokenConfig>,
+    State(signer): State<TokenSigner>,
     Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<UserResponse>> {
-    if !claims.scope.contains(&session::Scope::UserWrite) && claims.sub != id {
+    if !claims.scope.contains(&Scope::UserWrite) && claims.sub != id {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
@@ -186,7 +198,7 @@ pub async fn update(
 
     let mut doc = Document::new();
     if let Some(v) = body.email {
-        send_verification_mail(&v, &id.to_hex(), mail, config).await?;
+        send_verification_mail(v.clone(), id.to_hex(), mail, signer).await?;
         doc.insert("verified", false);
         doc.insert("email", v);
     }
@@ -196,7 +208,7 @@ pub async fn update(
         doc.insert("password", hash);
     }
 
-    if claims.scope.contains(&session::Scope::UserWrite) {
+    if claims.scope.contains(&Scope::UserWrite) {
         if let Some(v) = body.verified {
             doc.insert("verified", v);
         }
@@ -216,10 +228,10 @@ pub async fn update(
 
 pub async fn delete(
     Path(id): Path<String>,
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
 ) -> crate::Result<Status> {
-    if !claims.scope.contains(&session::Scope::UserWrite) {
+    if !claims.scope.contains(&Scope::UserWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 

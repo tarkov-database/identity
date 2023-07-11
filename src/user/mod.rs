@@ -1,6 +1,8 @@
 mod handler;
 mod routes;
 
+use std::collections::VecDeque;
+
 use crate::{
     database::Database,
     error,
@@ -13,13 +15,15 @@ use futures::stream::TryStreamExt;
 use hyper::StatusCode;
 use mongodb::{
     bson::{
-        doc, oid::ObjectId, serde_helpers::chrono_datetime_as_bson_datetime, to_bson, Document,
+        self, doc, oid::ObjectId, serde_helpers::chrono_datetime_as_bson_datetime, to_bson,
+        Document,
     },
     options::{FindOneAndUpdateOptions, FindOptions, ReturnDocument},
 };
 use serde::{Deserialize, Serialize};
 
 pub use routes::routes;
+use uuid::Uuid;
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum UserError {
@@ -33,6 +37,12 @@ pub enum UserError {
     InvalidAddr,
     #[error("email address not allowed")]
     DomainNotAllowed,
+    #[error("user is not verified")]
+    NotVerified,
+    #[error("user is locked")]
+    Locked,
+    #[error("user is not allowed to login")]
+    LoginNotAllowed,
 }
 
 impl error::ErrorResponse for UserError {
@@ -43,6 +53,9 @@ impl error::ErrorResponse for UserError {
             UserError::NotFound => StatusCode::NOT_FOUND,
             UserError::AlreadyExists | UserError::InvalidAddr | UserError::InvalidId => {
                 StatusCode::BAD_REQUEST
+            }
+            UserError::NotVerified | UserError::Locked | UserError::LoginNotAllowed => {
+                StatusCode::FORBIDDEN
             }
             UserError::DomainNotAllowed => StatusCode::UNPROCESSABLE_ENTITY,
         }
@@ -74,12 +87,19 @@ pub struct UserDocument {
     pub roles: Vec<Role>,
     pub verified: bool,
     pub can_login: bool,
+    pub locked: bool,
     pub connections: Vec<Connection>,
     pub last_sessions: Vec<SessionDocument>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub last_modified: DateTime<Utc>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created: DateTime<Utc>,
+}
+
+impl UserDocument {
+    pub fn find_session(&self, id: &bson::Uuid) -> Option<&SessionDocument> {
+        self.last_sessions.iter().find(|s| &s.id == id)
+    }
 }
 
 impl Default for UserDocument {
@@ -90,7 +110,8 @@ impl Default for UserDocument {
             password: Default::default(),
             roles: Default::default(),
             verified: false,
-            can_login: true,
+            can_login: false,
+            locked: false,
             connections: Default::default(),
             last_sessions: Default::default(),
             last_modified: Utc::now(),
@@ -102,8 +123,29 @@ impl Default for UserDocument {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDocument {
+    pub id: bson::Uuid,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
-    pub date: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    pub issued: DateTime<Utc>,
+}
+
+impl SessionDocument {
+    pub fn new() -> Self {
+        Self {
+            id: Uuid::new_v4().into(),
+            last_seen: Utc::now(),
+            issued: Utc::now(),
+        }
+    }
+
+    pub fn with_id(id: impl Into<bson::Uuid>) -> Self {
+        Self {
+            id: id.into(),
+            last_seen: Utc::now(),
+            issued: Utc::now(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -252,18 +294,23 @@ impl Database {
         Ok(())
     }
 
-    pub async fn set_user_session(&self, user_id: ObjectId) -> Result<()> {
+    pub async fn set_user_session(&self, user_id: ObjectId, doc: SessionDocument) -> Result<()> {
         let filter = doc! { "_id": user_id };
 
-        let UserDocument {
-            mut last_sessions, ..
-        } = self.get_user(filter.clone()).await?;
+        let user = self.get_user(filter.clone()).await?;
+        let mut last_sessions = VecDeque::from(user.last_sessions);
 
-        if last_sessions.len() == 5 {
-            last_sessions = last_sessions.into_iter().skip(1).collect();
+        if let Some(index) = last_sessions.iter().position(|e| e.id == doc.id) {
+            let mut element = last_sessions.remove(index).unwrap();
+            element.last_seen = doc.last_seen;
+            last_sessions.push_back(element);
+        } else {
+            last_sessions.push_back(doc);
         }
 
-        last_sessions.push(SessionDocument { date: Utc::now() });
+        if last_sessions.len() > 10 {
+            last_sessions.pop_front();
+        }
 
         let doc = doc! {
             "$set": {"lastSessions": to_bson(&last_sessions).unwrap()},

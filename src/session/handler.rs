@@ -1,14 +1,14 @@
 use crate::{
-    authentication::{
+    auth::{
         password::Password,
-        token::{TokenClaims, TokenConfig},
+        token::{sign::TokenSigner, TokenError},
     },
     database::Database,
     error::Error,
     extract::{Json, TokenData},
     model::Response,
-    session::{Scope, SessionClaims, SessionError},
-    user::UserError,
+    session::{SessionClaims, SessionError},
+    user::{SessionDocument, UserError},
 };
 
 use axum::extract::State;
@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionResponse {
-    pub user: String,
+    pub user_id: String,
     pub token: String,
     #[serde(with = "ts_seconds")]
     pub expires_at: DateTime<Utc>,
@@ -35,7 +35,7 @@ pub struct CreateRequest {
 
 pub async fn create(
     State(db): State<Database>,
-    State(config): State<TokenConfig>,
+    State(signer): State<TokenSigner>,
     State(password): State<Password>,
     Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<SessionResponse>> {
@@ -52,32 +52,32 @@ pub async fn create(
 
     let password_hash = user.password.ok_or(SessionError::BadCredentials)?;
 
+    if user.locked {
+        return Err(UserError::Locked)?;
+    }
     if !user.verified {
-        return Err(SessionError::NotAuthorized("user is not verified".to_string()).into());
+        return Err(UserError::NotVerified)?;
     }
     if !user.can_login {
-        return Err(
-            SessionError::NotAuthorized("user is not authorized to log in".to_string()).into(),
-        );
+        return Err(UserError::LoginNotAllowed)?;
     }
 
     if password.verify(&body.password, &password_hash).is_err() {
         return Err(SessionError::BadCredentials.into());
     }
 
-    let audience = config.validation.aud.clone().unwrap();
-    let scope = Scope::from_roles(user.roles);
-    let claims = SessionClaims::with_scope(audience, &user.id.to_hex(), scope);
+    let session = SessionDocument::new();
 
-    let token = claims.encode(&config)?;
+    let claims = SessionClaims::new(session.id, &user.id.to_hex());
+    let token = signer.sign(&claims).await?;
 
     let response = SessionResponse {
-        user: user.id.to_hex(),
+        user_id: user.id.to_hex(),
         token,
         expires_at: claims.exp,
     };
 
-    db.set_user_session(user.id).await?;
+    db.set_user_session(user.id, session).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, response))
 }
@@ -85,33 +85,39 @@ pub async fn create(
 pub async fn refresh(
     TokenData(claims): TokenData<SessionClaims>,
     State(db): State<Database>,
-    State(config): State<TokenConfig>,
+    State(signer): State<TokenSigner>,
 ) -> crate::Result<Response<SessionResponse>> {
     let user_id = ObjectId::parse_str(&claims.sub).unwrap();
 
     let user = db.get_user(doc! {"_id": user_id }).await?;
 
+    if user.locked {
+        return Err(UserError::Locked)?;
+    }
     if !user.verified {
-        return Err(SessionError::NotAuthorized("user is not verified".to_string()).into());
+        return Err(UserError::NotVerified)?;
     }
     if !user.can_login {
-        return Err(
-            SessionError::NotAuthorized("user is not authorized to log in".to_string()).into(),
-        );
+        return Err(UserError::LoginNotAllowed)?;
+    }
+    if user.find_session(&claims.jti.into()).is_none() {
+        return Err(TokenError::Invalid)?;
     }
 
     let mut claims = claims;
     claims.set_expiration(Utc::now() + Duration::minutes(SessionClaims::DEFAULT_EXP_MIN));
 
-    let token = claims.encode(&config)?;
+    let token = signer.sign(&claims).await?;
 
     let response = SessionResponse {
-        user: user.id.to_hex(),
+        user_id: user.id.to_hex(),
         token,
         expires_at: claims.exp,
     };
 
-    db.set_user_session(user.id).await?;
+    let session = SessionDocument::with_id(claims.jti);
+
+    db.set_user_session(user.id, session).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, response))
 }

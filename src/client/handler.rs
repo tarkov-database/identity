@@ -1,21 +1,22 @@
 use crate::{
-    authentication::AuthenticationError,
+    auth::{token::sign::TokenSigner, AuthenticationError},
     database::Database,
     error::QueryError,
     extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
     service::ServiceError,
-    session::{self, SessionClaims},
+    token::{AccessClaims, Scope},
     user::UserError,
 };
 
-use super::{ClientDocument, ClientError};
+use super::{ClientClaims, ClientDocument, ClientError, TokenDocument};
 
 use axum::extract::{Path, State};
-use chrono::{serde::ts_seconds, DateTime, TimeZone, Utc};
+use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,11 +26,14 @@ pub struct ClientResponse {
     pub service: String,
     pub name: String,
     pub scope: Vec<String>,
-    pub unlocked: bool,
+    pub locked: bool,
+    pub token: Option<ClientTokenResponse>,
     #[serde(with = "ts_seconds")]
-    pub last_issued: DateTime<Utc>,
+    pub last_used: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
     pub last_modified: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub created: DateTime<Utc>,
 }
 
 impl From<ClientDocument> for ClientResponse {
@@ -40,9 +44,31 @@ impl From<ClientDocument> for ClientResponse {
             service: doc.service.to_hex(),
             name: doc.name,
             scope: doc.scope,
-            unlocked: doc.unlocked,
-            last_issued: doc.last_issued,
+            locked: doc.locked,
+            token: doc.token.map(ClientTokenResponse::from),
+            last_used: doc.last_used,
             last_modified: doc.last_modified,
+            created: doc.created,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientTokenResponse {
+    pub id: Uuid,
+    #[serde(with = "ts_seconds")]
+    pub expires: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub issued: DateTime<Utc>,
+}
+
+impl From<TokenDocument> for ClientTokenResponse {
+    fn from(doc: TokenDocument) -> Self {
+        Self {
+            id: doc.id.into(),
+            expires: doc.expires,
+            issued: doc.issued,
         }
     }
 }
@@ -59,12 +85,12 @@ pub struct Filter {
 }
 
 pub async fn list(
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
     State(db): State<Database>,
 ) -> crate::Result<Response<List<ClientResponse>>> {
-    let user = if !claims.scope.contains(&session::Scope::ClientRead) {
+    let user = if !claims.scope.contains(&Scope::ClientRead) {
         Some(&claims.sub)
     } else {
         filter.user.as_ref()
@@ -86,13 +112,13 @@ pub async fn list(
 
 pub async fn get_by_id(
     Path(id): Path<String>,
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
 ) -> crate::Result<Response<ClientResponse>> {
     let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
     let mut filter = doc! { "_id": id };
-    if !claims.scope.contains(&session::Scope::ClientRead) {
+    if !claims.scope.contains(&Scope::ClientRead) {
         let id = ObjectId::parse_str(&claims.sub).unwrap();
         filter.insert("user", id);
     }
@@ -112,12 +138,12 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
     Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<ClientResponse>> {
     let user_id = if let Some(id) = body.user {
-        if !claims.scope.contains(&session::Scope::ClientWrite) && claims.sub != id {
+        if !claims.scope.contains(&Scope::ClientWrite) && claims.sub != id {
             return Err(AuthenticationError::InsufficientPermission.into());
         }
         ObjectId::parse_str(&id).map_err(|_| UserError::InvalidId)?
@@ -135,9 +161,11 @@ pub async fn create(
         name: body.name,
         service: svc_id,
         scope: svc.scope_default,
-        unlocked: false,
-        last_issued: Utc.timestamp(0, 0),
+        locked: false,
+        token: None,
+        last_used: Default::default(),
         last_modified: Utc::now(),
+        created: Utc::now(),
     };
 
     db.insert_client(&client).await?;
@@ -151,25 +179,25 @@ pub struct UpdateRequest {
     user: Option<String>,
     name: Option<String>,
     scope: Option<Vec<String>>,
-    unlocked: Option<bool>,
+    locked: Option<bool>,
 }
 
 pub async fn update(
     Path(id): Path<String>,
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
     Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<ClientResponse>> {
     let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
     let mut doc = Document::new();
-    if claims.scope.contains(&session::Scope::ClientWrite) {
+    if claims.scope.contains(&Scope::ClientWrite) {
         if let Some(v) = body.user {
             let id = ObjectId::parse_str(&v).map_err(|_| UserError::InvalidId)?;
             doc.insert("user", id);
         }
-        if let Some(v) = body.unlocked {
-            doc.insert("unlocked", v);
+        if let Some(v) = body.locked {
+            doc.insert("locked", v);
         }
     }
     if let Some(v) = body.name {
@@ -182,7 +210,7 @@ pub async fn update(
         return Err(QueryError::InvalidBody.into());
     }
 
-    let user = if !claims.scope.contains(&session::Scope::ClientWrite) {
+    let user = if !claims.scope.contains(&Scope::ClientWrite) {
         Some(ObjectId::parse_str(&claims.sub).unwrap())
     } else {
         None
@@ -195,10 +223,10 @@ pub async fn update(
 
 pub async fn delete(
     Path(id): Path<String>,
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
 ) -> crate::Result<Status> {
-    if !claims.scope.contains(&session::Scope::ClientWrite) {
+    if !claims.scope.contains(&Scope::ClientWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
@@ -207,4 +235,69 @@ pub async fn delete(
     db.delete_client(id).await?;
 
     Ok(Status::new(StatusCode::OK, "client deleted"))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenRequest {
+    /// Period of validity for the token in seconds.
+    #[serde(default)]
+    validity: u64,
+}
+
+impl Default for TokenRequest {
+    fn default() -> Self {
+        Self {
+            validity: Duration::days(365).num_seconds() as u64,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenResponse {
+    token: String,
+    #[serde(with = "ts_seconds")]
+    expires: DateTime<Utc>,
+}
+
+pub async fn create_token(
+    Path(id): Path<String>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
+    State(db): State<Database>,
+    State(signer): State<TokenSigner>,
+    Json(body): Json<TokenRequest>,
+) -> crate::Result<Response<TokenResponse>> {
+    let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
+
+    let client = db.get_client(doc! { "_id": id }).await?;
+    if client.locked {
+        return Err(ClientError::Locked)?;
+    }
+
+    if !claims.scope.contains(&Scope::ClientWrite) && claims.sub != client.user.to_hex() {
+        return Err(AuthenticationError::InsufficientPermission)?;
+    }
+
+    let validity = Duration::seconds(body.validity as i64);
+
+    if validity > Duration::days(365) || validity < Duration::seconds(60) {
+        return Err(ClientError::InvalidExpiration)?;
+    }
+
+    let expires = Utc::now() + validity;
+
+    let doc = TokenDocument::new(expires);
+    let claims = ClientClaims::new(doc.id, &client.id.to_hex(), &client.user.to_hex(), expires);
+
+    let token = signer.sign(&claims).await?;
+
+    db.set_client_token(id, doc).await?;
+
+    let response = TokenResponse {
+        token,
+        expires: claims.exp,
+    };
+
+    Ok(Response::with_status(StatusCode::CREATED, response))
 }

@@ -1,13 +1,13 @@
 use crate::{
-    authentication::token::{TokenClaims, TokenConfig, TokenError},
+    auth::token::{sign::TokenSigner, verify::TokenVerifier},
     config::GlobalConfig,
     database::Database,
     error::{self, Error},
     extract::Query,
     http::HttpClient,
     model::{Response, Status},
-    session::{Scope, SessionClaims, SessionResponse},
-    user::{Connection, UserDocument, UserError},
+    session::{SessionClaims, SessionResponse},
+    user::{Connection, SessionDocument, UserDocument, UserError},
     utils, Result,
 };
 
@@ -237,12 +237,10 @@ struct Email {
 
 pub(super) async fn authorize(
     Extension(gh): Extension<GitHub>,
-    State(config): State<TokenConfig>,
+    State(signer): State<TokenSigner>,
 ) -> crate::Result<axum::response::Response> {
-    let header = jsonwebtoken::Header::new(config.alg);
-    let claims = StateClaims::new(config.validation.aud.clone().unwrap());
-    let state =
-        jsonwebtoken::encode(&header, &claims, &config.enc_key).map_err(TokenError::from)?;
+    let claims = StateClaims::new();
+    let state = signer.sign(&claims).await?;
 
     let pq = format!(
         "/login/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}&state={state}",
@@ -260,8 +258,9 @@ pub(super) async fn authorize(
 
     let mut redirect = Redirect::to(&uri.to_string()).into_response();
     let cookie = format!(
-        "state={}; Path=/v1/sso/github; SameSite=Lax; Secure; HttpOnly",
-        state
+        "state={}; Path=/v1/sso/github; Max-Age={}; SameSite=Lax; Secure; HttpOnly",
+        state,
+        StateClaims::DEFAULT_EXP_MIN * 60,
     )
     .parse()
     .unwrap();
@@ -282,7 +281,8 @@ pub(super) async fn authorized(
     Extension(gh): Extension<GitHub>,
     State(db): State<Database>,
     State(global): State<GlobalConfig>,
-    State(config): State<TokenConfig>,
+    State(signer): State<TokenSigner>,
+    State(verifier): State<TokenVerifier>,
 ) -> crate::Result<Response<SessionResponse>> {
     let state = cookies.get("state").ok_or(SsoError::StateMissing)?;
 
@@ -290,7 +290,9 @@ pub(super) async fn authorized(
         return Err(SsoError::InvalidState.into());
     }
 
-    let _claims = jsonwebtoken::decode::<StateClaims>(state, &config.dec_key, &config.validation)
+    let _claims = verifier
+        .verify::<StateClaims>(state)
+        .await
         .map_err(|_| SsoError::InvalidState)?;
 
     let TokenResponse { access_token, .. } = gh.get_access_token(&params.code).await?;
@@ -320,7 +322,7 @@ pub(super) async fn authorized(
         {"email": &email.address },
     ]};
 
-    let doc = match db.get_user(query).await {
+    let user = match db.get_user(query).await {
         Ok(doc) => {
             if let Some(c) = doc.connections.iter().find(|&c| c.is_github()) {
                 if c != &connection {
@@ -332,6 +334,7 @@ pub(super) async fn authorized(
                 db.insert_user_connection(doc.id, connection).await?
             }
         }
+        // TODO: improve pattern matching
         Err(e) => match e {
             Error::User(e) if e == UserError::NotFound => {
                 let domain =
@@ -357,19 +360,18 @@ pub(super) async fn authorized(
         },
     };
 
-    let audience = config.validation.aud.clone().unwrap();
-    let scope = Scope::from_roles(doc.roles);
-    let claims = SessionClaims::with_scope(audience, &doc.id.to_hex(), scope);
+    let session = SessionDocument::new();
 
-    let token = claims.encode(&config)?;
+    let claims = SessionClaims::new(session.id, &user.id.to_hex());
+    let token = signer.sign(&claims).await?;
 
     let response = SessionResponse {
-        user: doc.id.to_hex(),
+        user_id: user.id.to_hex(),
         token,
         expires_at: claims.exp,
     };
 
-    db.set_user_session(doc.id).await?;
+    db.set_user_session(user.id, session).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, response))
 }

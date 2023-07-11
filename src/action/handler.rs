@@ -1,5 +1,5 @@
 use crate::{
-    authentication::{password::Password, token::TokenConfig},
+    auth::{password::Password, token::sign::TokenSigner},
     database::Database,
     extract::{Json, Query, TokenData},
     mail,
@@ -8,7 +8,7 @@ use crate::{
     utils, GlobalConfig,
 };
 
-use super::{send_reset_mail, send_verification_mail, ActionClaims, ActionError, ActionType};
+use super::{send_reset_mail, send_verification_mail, ActionClaims, ActionError, Reset, Verify};
 
 use axum::extract::State;
 use chrono::Utc;
@@ -28,7 +28,7 @@ pub async fn register(
     State(global): State<GlobalConfig>,
     State(password): State<Password>,
     State(mail): State<mail::Client>,
-    State(config): State<TokenConfig>,
+    State(signer): State<TokenSigner>,
     Json(body): Json<RegisterRequest>,
 ) -> crate::Result<Status> {
     let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
@@ -52,7 +52,7 @@ pub async fn register(
     let user = UserDocument {
         id: ObjectId::new(),
         email: body.email,
-        password: Some(password_hash.to_string()),
+        password: Some(password_hash),
         roles,
         last_modified: Utc::now(),
         ..Default::default()
@@ -60,19 +60,15 @@ pub async fn register(
 
     db.insert_user(&user).await?;
 
-    send_verification_mail(&user.email, &user.id.to_hex(), mail, config).await?;
+    send_verification_mail(user.email, user.id.to_hex(), mail, signer).await?;
 
     Ok(Status::new(StatusCode::CREATED, "user registered"))
 }
 
 pub async fn verify_email(
-    TokenData(claims): TokenData<ActionClaims>,
+    TokenData(claims): TokenData<ActionClaims<Verify>>,
     State(db): State<Database>,
 ) -> crate::Result<Status> {
-    if claims.r#type != ActionType::Verify {
-        return Err(ActionError::InvalidToken.into());
-    }
-
     let addr = claims.email.ok_or(ActionError::InvalidToken)?;
 
     let user_id = ObjectId::parse_str(claims.sub).unwrap();
@@ -101,7 +97,7 @@ pub async fn request_reset(
     Query(opts): Query<ResetOptions>,
     State(db): State<Database>,
     State(mail): State<mail::Client>,
-    State(config): State<TokenConfig>,
+    State(signer): State<TokenSigner>,
 ) -> crate::Result<Status> {
     let user = db.get_user(doc! { "email": opts.email }).await?;
 
@@ -109,7 +105,7 @@ pub async fn request_reset(
         return Err(ActionError::NotVerified.into());
     }
 
-    send_reset_mail(&user.email, &user.id.to_hex(), mail, config).await?;
+    send_reset_mail(user.email, user.id.to_hex(), mail, signer).await?;
 
     Ok(Status::new(StatusCode::OK, "reset email sent"))
 }
@@ -120,20 +116,16 @@ pub struct ResetRequest {
 }
 
 pub async fn reset_password(
-    TokenData(claims): TokenData<ActionClaims>,
+    TokenData(claims): TokenData<ActionClaims<Reset>>,
     State(db): State<Database>,
     State(password): State<Password>,
     Json(body): Json<ResetRequest>,
 ) -> crate::Result<Status> {
-    if claims.r#type != ActionType::Reset {
-        return Err(ActionError::InvalidToken.into());
-    }
-
     let user_id = ObjectId::parse_str(claims.sub).unwrap();
 
     let password_hash = password.validate_and_hash(&body.password).await?;
 
-    db.update_user_by_id(user_id, doc! { "password": password_hash.to_string() })
+    db.update_user_by_id(user_id, doc! { "password": password_hash })
         .await?;
 
     Ok(Status::new(StatusCode::OK, "new password set"))

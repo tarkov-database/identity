@@ -1,7 +1,8 @@
 mod action;
-mod authentication;
+mod auth;
 mod client;
 mod config;
+mod crypto;
 mod database;
 mod error;
 mod extract;
@@ -16,23 +17,25 @@ mod user;
 mod utils;
 
 use crate::{
-    authentication::{
+    auth::{
         password::{Hasher, Hibp, Password},
-        token::TokenConfig,
+        token::sign::TokenSignerBuilder,
     },
     config::{AppConfig, GlobalConfig},
+    crypto::{aead::Aead256, certificate::CertificateStore},
     database::Database,
     error::handle_error,
     http::HttpClient,
     sso::GitHub,
-    utils::crypto::Aead256,
 };
 
 use std::{iter::once, net::SocketAddr, time::Duration};
 
+use auth::token::{sign::TokenSigner, verify::TokenVerifier};
 use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::AUTHORIZATION;
 use mongodb::options::{ClientOptions, Tls, TlsOptions};
+use pki_rs::certificate::Certificate;
 use tower::ServiceBuilder;
 use tower_http::{
     sensitive_headers::SetSensitiveHeadersLayer,
@@ -47,14 +50,16 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
+// TODO: improve and move app state
 #[derive(Clone)]
 pub struct AppState {
     mail_client: mail::Client,
     database: Database,
     password: Password,
+    token_signer: TokenSigner,
+    token_verifier: TokenVerifier,
     aead: Aead256,
     global_config: GlobalConfig,
-    token_config: TokenConfig,
 }
 
 #[tokio::main]
@@ -64,7 +69,7 @@ async fn main() -> Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "RUST_LOG=info".into()),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().pretty())
         .init();
 
     let prefix = envy::prefixed("IDENTITY_");
@@ -85,10 +90,29 @@ async fn main() -> Result<()> {
         mongo_opts.tls = Some(Tls::Enabled(opts.build()));
     }
 
+    // TODO: improve this
+    let trust_anchor_file = tokio::fs::read(app_config.token_trust_anchor)
+        .await
+        .expect("failed to read trust anchor");
+    let trust_anchor = utils::pem::read_cert(&trust_anchor_file[..])
+        .map(Certificate::from_der)
+        .expect("failed to read trust anchor")
+        .expect("failed to parse trust anchor");
+
+    let cert_store = CertificateStore::new(trust_anchor);
+
+    let token_signer = TokenSignerBuilder::default()
+        .set_key_path(app_config.token_key)
+        .set_chain_path(app_config.token_certs)
+        .set_store(cert_store.clone())
+        .build()
+        .await
+        .expect("failed to build token signer");
+
+    let token_verifier = TokenVerifier::new(cert_store);
+
     let db = Database::new(mongo_opts, &app_config.mongo_db)?;
     let client = HttpClient::default();
-    let token_config =
-        TokenConfig::from_secret(app_config.jwt_secret.as_bytes(), app_config.jwt_audience);
     let aead = Aead256::new_from_b64(app_config.crypto_key)?;
     let hibp = Hibp::with_client(client.clone());
     let password = Password::new(Hasher::default(), hibp, app_config.hibp_check);
@@ -115,8 +139,9 @@ async fn main() -> Result<()> {
         database: db,
         aead,
         password,
+        token_signer,
+        token_verifier,
         global_config,
-        token_config,
     };
 
     let middleware = ServiceBuilder::new()

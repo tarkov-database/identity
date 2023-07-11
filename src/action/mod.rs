@@ -2,12 +2,12 @@ mod handler;
 mod routes;
 
 use crate::{
-    authentication::token::{TokenClaims, TokenConfig, TokenType},
+    auth::token::{sign::TokenSigner, Token, TokenType, TokenValidation, LEEWAY},
     error, mail,
     model::Status,
 };
 
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData};
 
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
@@ -40,81 +40,110 @@ impl error::ErrorResponse for ActionError {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ActionType {
-    Verify,
-    Reset,
+pub trait ActionType {
+    const AUDIENCE: &'static str;
 }
 
-impl ActionType {
-    const fn expiration_time(&self) -> std::time::Duration {
-        match self {
-            ActionType::Verify => std::time::Duration::from_secs(3 * 60 * 60 * 24),
-            ActionType::Reset => std::time::Duration::from_secs(30 * 60),
-        }
-    }
+pub struct Verify;
+
+impl ActionType for Verify {
+    const AUDIENCE: &'static str = "identity/action/verify";
+}
+
+pub struct Reset;
+
+impl ActionType for Reset {
+    const AUDIENCE: &'static str = "identity/action/reset";
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ActionClaims {
-    pub aud: Vec<String>,
+pub struct ActionClaims<T> {
+    pub aud: String,
     #[serde(with = "ts_seconds")]
     pub exp: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
+    pub nbf: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
     pub iat: DateTime<Utc>,
     pub sub: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
-    pub r#type: ActionType,
-    token_type: TokenType,
+
+    #[serde(skip)]
+    marker: PhantomData<T>,
 }
 
-impl ActionClaims {
-    fn new<A>(aud: A, sub: &str, r#type: ActionType) -> Self
-    where
-        A: IntoIterator<Item = String>,
-    {
+impl<T: ActionType> Default for ActionClaims<T> {
+    fn default() -> Self {
+        let now = Utc::now();
         Self {
-            aud: aud.into_iter().collect(),
-            exp: Utc::now() + Duration::from_std(r#type.expiration_time()).unwrap(),
-            iat: Utc::now(),
-            sub: sub.into(),
+            aud: T::AUDIENCE.into(),
+            exp: now + Duration::hours(1),
+            nbf: now,
+            iat: now,
+            sub: String::default(),
             email: None,
-            r#type,
-            token_type: Self::TOKEN_TYPE,
+            marker: PhantomData,
         }
     }
+}
 
-    fn with_email<A>(aud: A, sub: &str, email: &str) -> Self
-    where
-        A: IntoIterator<Item = String>,
-    {
-        let mut claims = Self::new(aud, sub, ActionType::Verify);
-        claims.email = Some(email.into());
-
-        claims
+impl ActionClaims<Verify> {
+    pub fn new_verify(user_id: String, email: String) -> Self {
+        Self {
+            sub: user_id,
+            email: Some(email),
+            ..Self::default()
+        }
     }
 }
 
-impl TokenClaims for ActionClaims {
-    const TOKEN_TYPE: TokenType = TokenType::Action;
+impl ActionClaims<Reset> {
+    pub fn new_reset(user_id: String) -> Self {
+        Self {
+            sub: user_id,
+            ..Self::default()
+        }
+    }
+}
 
-    fn get_type(&self) -> &TokenType {
-        &self.token_type
+impl<T: ActionType> Token for ActionClaims<T> {
+    const TYPE: TokenType = TokenType::Action;
+
+    fn expires_at(&self) -> DateTime<Utc> {
+        self.exp
+    }
+
+    fn not_before(&self) -> DateTime<Utc> {
+        self.nbf
+    }
+
+    fn issued_at(&self) -> DateTime<Utc> {
+        self.iat
+    }
+}
+
+impl<T: ActionType> TokenValidation for ActionClaims<T> {
+    fn validation(alg: jsonwebtoken::Algorithm) -> jsonwebtoken::Validation {
+        let mut validation = jsonwebtoken::Validation::new(alg);
+        validation.leeway = LEEWAY;
+        validation.set_required_spec_claims(&["exp", "nbf", "sub", "aud", "iat"]);
+        validation.set_audience(&[T::AUDIENCE]);
+        validation.validate_exp = true;
+        validation.validate_nbf = true;
+        validation
     }
 }
 
 pub async fn send_verification_mail(
-    addr: &str,
-    user_id: &str,
+    addr: String,
+    user_id: String,
     client: mail::Client,
-    config: TokenConfig,
+    signer: TokenSigner,
 ) -> crate::Result<()> {
-    let audience = config.validation.aud.clone().unwrap();
-    let claims = ActionClaims::with_email(audience, user_id, addr);
-
-    let token = claims.encode(&config)?;
+    let claims = ActionClaims::new_verify(user_id, addr.clone());
+    let token = signer.sign(&claims).await?;
 
     const TEMPLATE_NAME: &str = "identity.action.verify";
     const SUBJECT: &str = "Email verification required";
@@ -123,22 +152,20 @@ pub async fn send_verification_mail(
     vars.insert("token".to_string(), token);
 
     client
-        .send_template(addr, SUBJECT, TEMPLATE_NAME, vars)
+        .send_template(&addr, SUBJECT, TEMPLATE_NAME, vars)
         .await?;
 
     Ok(())
 }
 
 async fn send_reset_mail(
-    addr: &str,
-    user_id: &str,
+    addr: String,
+    user_id: String,
     client: mail::Client,
-    config: TokenConfig,
+    signer: TokenSigner,
 ) -> crate::Result<()> {
-    let audience = config.validation.aud.clone().unwrap();
-    let claims = ActionClaims::new(audience, user_id, ActionType::Reset);
-
-    let token = claims.encode(&config)?;
+    let claims = ActionClaims::new_reset(user_id.clone());
+    let token = signer.sign(&claims).await?;
 
     const TEMPLATE_NAME: &str = "identity.action.reset";
     const SUBJECT: &str = "Password reset";
@@ -147,7 +174,7 @@ async fn send_reset_mail(
     vars.insert("token".to_string(), token);
 
     client
-        .send_template(addr, SUBJECT, TEMPLATE_NAME, vars)
+        .send_template(&addr, SUBJECT, TEMPLATE_NAME, vars)
         .await?;
 
     Ok(())

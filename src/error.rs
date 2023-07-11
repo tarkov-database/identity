@@ -1,22 +1,21 @@
 use crate::{
     action::ActionError,
-    authentication::{
-        password::PasswordError, token::TokenError as AuthTokenError, AuthenticationError,
-    },
+    auth::{password::PasswordError, token::TokenError as AuthTokenError, AuthenticationError},
     client::ClientError,
+    crypto::aead::AeadError,
     model::Status,
     service::ServiceError,
     session::SessionError,
     sso::SsoError,
     token::TokenError,
     user::UserError,
-    utils::crypto::CryptoError,
 };
 
 use hyper::StatusCode;
 use tower::BoxError;
 use tracing::error;
 
+// TODO: rework error handling
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("query error: {0}")]
@@ -42,7 +41,7 @@ pub enum Error {
     #[error("Http error: {0}")]
     Http(#[from] http::Error),
     #[error("crypto error: {0}")]
-    Crypto(#[from] CryptoError),
+    Crypto(#[from] AeadError),
     #[error("database error: {0}")]
     Database(#[from] mongodb::error::Error),
     #[error("Envy error: {0}")]

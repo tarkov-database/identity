@@ -1,11 +1,10 @@
 use crate::{
-    authentication::AuthenticationError,
+    auth::AuthenticationError,
     database::Database,
     error::QueryError,
     extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
-    session::{self, SessionClaims},
-    utils::crypto::Aead256,
+    token::{AccessClaims, Scope},
 };
 
 use super::{ServiceDocument, ServiceError};
@@ -51,12 +50,12 @@ pub struct Filter {
 }
 
 pub async fn list(
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
     State(db): State<Database>,
 ) -> crate::Result<Response<List<ServiceResponse>>> {
-    if !claims.scope.contains(&session::Scope::ServiceRead) {
+    if !claims.scope.contains(&Scope::ServiceRead) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
@@ -68,10 +67,10 @@ pub async fn list(
 
 pub async fn get_by_id(
     Path(id): Path<String>,
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
 ) -> crate::Result<Response<ServiceResponse>> {
-    if !claims.scope.contains(&session::Scope::ServiceRead) {
+    if !claims.scope.contains(&Scope::ServiceRead) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
@@ -89,24 +88,16 @@ pub struct CreateRequest {
     audience: Vec<String>,
     scope: Vec<String>,
     scope_default: Vec<String>,
-    secret: Option<String>,
 }
 
 pub async fn create(
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
-    State(enc): State<Aead256>,
     Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<ServiceResponse>> {
-    if !claims.scope.contains(&session::Scope::ServiceWrite) {
+    if !claims.scope.contains(&Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
-
-    let secret = if let Some(s) = body.secret {
-        enc.encrypt_b64(s).into()
-    } else {
-        None
-    };
 
     let service = ServiceDocument {
         id: ObjectId::new(),
@@ -114,8 +105,8 @@ pub async fn create(
         audience: body.audience,
         scope: body.scope,
         scope_default: body.scope_default,
-        secret,
         last_modified: Utc::now(),
+        created: Utc::now(),
     };
 
     db.insert_service(&service).await?;
@@ -130,17 +121,15 @@ pub struct UpdateRequest {
     audience: Option<String>,
     scope: Option<Vec<String>>,
     scope_default: Option<Vec<String>>,
-    secret: Option<String>,
 }
 
 pub async fn update(
     Path(id): Path<String>,
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
-    State(enc): State<Aead256>,
     Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<ServiceResponse>> {
-    if !claims.scope.contains(&session::Scope::ServiceWrite) {
+    if !claims.scope.contains(&Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
@@ -169,10 +158,6 @@ pub async fn update(
     if let Some(v) = body.audience {
         doc.insert("audience", v);
     }
-    if let Some(s) = body.secret {
-        let secret = enc.encrypt_b64(s);
-        doc.insert("secret", secret);
-    }
     if let Some(v) = body.scope {
         doc.insert("scope", v);
     }
@@ -190,10 +175,10 @@ pub async fn update(
 
 pub async fn delete(
     Path(id): Path<String>,
-    TokenData(claims): TokenData<SessionClaims>,
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(db): State<Database>,
 ) -> crate::Result<Status> {
-    if !claims.scope.contains(&session::Scope::ServiceWrite) {
+    if !claims.scope.contains(&Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 

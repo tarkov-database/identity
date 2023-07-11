@@ -2,15 +2,15 @@ mod handler;
 mod routes;
 
 use crate::{
-    authentication::token::{TokenClaims, TokenType},
+    auth::token::{Token, TokenType, TokenValidation, LEEWAY},
     error,
     model::Status,
-    user::Role,
 };
 
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 pub use handler::SessionResponse;
 pub use routes::routes;
@@ -43,43 +43,31 @@ impl error::ErrorResponse for SessionError {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionClaims {
-    pub aud: Vec<String>,
+    pub jti: Uuid,
+    pub aud: String,
     #[serde(with = "ts_seconds")]
     pub exp: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
+    pub nbf: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
     pub iat: DateTime<Utc>,
     pub sub: String,
-    #[serde(default)]
-    pub scope: Vec<Scope>,
-    token_type: TokenType,
 }
 
 impl SessionClaims {
+    const AUDIENCE_SESSION: &str = "identity/session";
+
     pub const DEFAULT_EXP_MIN: i64 = 60;
 
-    pub fn new<A>(aud: A, sub: &str) -> Self
-    where
-        A: IntoIterator<Item = String>,
-    {
+    pub fn new(id: impl Into<Uuid>, user_id: &str) -> Self {
         Self {
-            aud: aud.into_iter().collect(),
+            jti: id.into(),
+            aud: Self::AUDIENCE_SESSION.into(),
             exp: Utc::now() + Duration::minutes(Self::DEFAULT_EXP_MIN),
+            nbf: Utc::now(),
             iat: Utc::now(),
-            sub: sub.into(),
-            scope: Vec::default(),
-            token_type: Self::TOKEN_TYPE,
+            sub: user_id.into(),
         }
-    }
-
-    pub fn with_scope<A, S>(aud: A, sub: &str, scope: S) -> Self
-    where
-        A: IntoIterator<Item = String>,
-        S: IntoIterator<Item = Scope>,
-    {
-        let mut claims = Self::new(aud, sub);
-        claims.scope = scope.into_iter().collect();
-
-        claims
     }
 
     pub fn set_expiration(&mut self, date: DateTime<Utc>) {
@@ -87,54 +75,30 @@ impl SessionClaims {
     }
 }
 
-impl TokenClaims for SessionClaims {
-    const TOKEN_TYPE: TokenType = TokenType::Session;
+impl Token for SessionClaims {
+    const TYPE: TokenType = TokenType::Session;
 
-    fn get_type(&self) -> &TokenType {
-        &self.token_type
+    fn expires_at(&self) -> DateTime<Utc> {
+        self.exp
+    }
+
+    fn not_before(&self) -> DateTime<Utc> {
+        self.nbf
+    }
+
+    fn issued_at(&self) -> DateTime<Utc> {
+        self.iat
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Scope {
-    UserRead,
-    UserWrite,
-
-    ClientRead,
-    ClientWrite,
-
-    ServiceRead,
-    ServiceWrite,
-}
-
-impl Scope {
-    pub fn from_roles<R>(roles: R) -> Vec<Scope>
-    where
-        R: IntoIterator<Item = Role>,
-    {
-        let mut scope = roles
-            .into_iter()
-            .map(|r| r.into())
-            .collect::<Vec<Vec<Scope>>>()
-            .concat::<Scope>();
-
-        scope.sort_unstable();
-        scope.dedup();
-
-        scope
-    }
-}
-
-impl From<Role> for Vec<Scope> {
-    fn from(role: Role) -> Self {
-        match role {
-            Role::UserEditor => vec![Scope::UserRead, Scope::UserWrite],
-            Role::UserViewer => vec![Scope::UserRead],
-            Role::ClientEditor => vec![Scope::ClientRead, Scope::ClientWrite],
-            Role::ClientViewer => vec![Scope::ClientRead],
-            Role::ServiceEditor => vec![Scope::ServiceRead, Scope::ServiceWrite],
-            Role::ServiceViewer => vec![Scope::ServiceRead],
-        }
+impl TokenValidation for SessionClaims {
+    fn validation(alg: jsonwebtoken::Algorithm) -> jsonwebtoken::Validation {
+        let mut validation = jsonwebtoken::Validation::new(alg);
+        validation.leeway = LEEWAY;
+        validation.set_required_spec_claims(&["jti", "exp", "nbf", "sub", "aud", "iat"]);
+        validation.set_audience(&[Self::AUDIENCE_SESSION]);
+        validation.validate_exp = true;
+        validation.validate_nbf = true;
+        validation
     }
 }

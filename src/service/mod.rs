@@ -44,7 +44,6 @@ impl error::ErrorResponse for ServiceError {
     }
 }
 
-// TODO: add algorithm
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceDocument {
@@ -54,10 +53,10 @@ pub struct ServiceDocument {
     pub audience: Vec<String>,
     pub scope: Vec<String>,
     pub scope_default: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub secret: Option<String>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub last_modified: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    pub created: DateTime<Utc>,
 }
 
 const COLLECTION: &str = "services";

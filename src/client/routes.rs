@@ -2,7 +2,7 @@ use crate::AppState;
 
 use super::handler;
 
-use axum::routing::get;
+use axum::routing::{get, post};
 
 /// User routes
 pub fn routes() -> axum::Router<AppState> {
@@ -14,4 +14,5 @@ pub fn routes() -> axum::Router<AppState> {
                 .patch(handler::update)
                 .delete(handler::delete),
         )
+        .route("/:id/token", post(handler::create_token))
 }

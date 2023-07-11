@@ -1,26 +1,20 @@
 use crate::{
-    authentication::{
-        self,
-        token::{TokenClaims, TokenConfig},
-    },
-    client::ClientError,
+    auth::token::{sign::TokenSigner, TokenError},
+    client::{ClientClaims, ClientError},
     database::Database,
-    extract::{Json, TokenData},
+    extract::EitherTokenData,
     model::Response,
     session::SessionClaims,
-    token::{ClientClaims, ServiceClaims},
+    token::AccessClaims,
     user::UserError,
-    utils::crypto::Aead256,
 };
-
-use std::iter::FromIterator;
 
 use axum::extract::State;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
-use jsonwebtoken::{encode, EncodingKey};
 use mongodb::bson::{doc, oid::ObjectId};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,83 +25,56 @@ pub struct TokenResponse {
 }
 
 pub async fn get(
-    TokenData(claims): TokenData<ClientClaims>,
+    claims: EitherTokenData<ClientClaims, SessionClaims>,
     State(db): State<Database>,
-    State(enc): State<Aead256>,
-    State(config): State<TokenConfig>,
+    State(signer): State<TokenSigner>,
 ) -> crate::Result<Response<TokenResponse>> {
-    let client_id = ObjectId::parse_str(&claims.sub).map_err(|_| ClientError::InvalidId)?;
+    let (token, expires_at) = match claims {
+        EitherTokenData::Left(ClientClaims {
+            ref jti, ref sub, ..
+        }) => {
+            let id = ObjectId::parse_str(sub).map_err(|_| ClientError::InvalidId)?;
+            let client = db.get_client(doc! { "_id": id }).await?;
+            match client.token {
+                Some(t) if &Uuid::from(t.id) == jti => {}
+                _ => return Err(TokenError::Invalid)?,
+            }
+            if client.locked {
+                return Err(ClientError::Locked)?;
+            }
 
-    let client = db.get_client(doc! { "_id": client_id }).await?;
-    let svc = db.get_service(doc! { "_id": client.service }).await?;
+            let user = db.get_user(doc! { "_id": client.user }).await?;
+            if user.locked {
+                return Err(UserError::Locked)?;
+            }
 
-    if !client.unlocked {
-        return Err(ClientError::Locked.into());
-    }
+            let service = db.get_service(doc! { "_id": client.service }).await?;
 
-    let header = jsonwebtoken::Header::new(config.alg);
+            let claims = AccessClaims::with_scope(service.audience, sub, client.scope);
+            let token = signer.sign(&claims).await?;
 
-    let key = if let Some(s) = svc.secret {
-        let secret = enc.decrypt_b64(s)?;
-        EncodingKey::from_secret(&secret)
-    } else {
-        config.enc_key
+            db.set_client_as_used(id).await?;
+
+            (token, claims.exp)
+        }
+        EitherTokenData::Right(SessionClaims { jti, ref sub, .. }) => {
+            let id = ObjectId::parse_str(sub).map_err(|_| UserError::InvalidId)?;
+            let user = db.get_user(doc! { "_id": id }).await?;
+            if user.locked {
+                return Err(UserError::Locked)?;
+            }
+            if user.find_session(&jti.into()).is_none() {
+                return Err(TokenError::Invalid)?;
+            }
+
+            let claims = AccessClaims::with_roles(&user.id.to_hex(), user.roles);
+            let token = signer.sign(&claims).await?;
+
+            (token, claims.exp)
+        }
     };
 
-    let audience = if !svc.audience.is_empty() {
-        svc.audience
-    } else {
-        Vec::from_iter(config.validation.aud.to_owned().unwrap())
-    };
-
-    let claims = ServiceClaims::with_scope(audience, &claims.sub, client.scope);
-
-    let token = encode(&header, &claims, &key).map_err(authentication::token::TokenError::from)?;
-
-    let response = TokenResponse {
-        token,
-        expires_at: claims.exp,
-    };
-
-    db.set_client_issued(client_id).await?;
-
-    Ok(Response::with_status(StatusCode::CREATED, response))
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateRequest {
-    client: String,
-}
-
-pub async fn create(
-    TokenData(claims): TokenData<SessionClaims>,
-    State(db): State<Database>,
-    State(config): State<TokenConfig>,
-    Json(body): Json<CreateRequest>,
-) -> crate::Result<Response<TokenResponse>> {
-    let client_id = ObjectId::parse_str(&claims.sub).map_err(|_| ClientError::InvalidId)?;
-    let user_id = ObjectId::parse_str(&claims.sub).map_err(|_| UserError::InvalidId)?;
-
-    let client = db
-        .get_client(doc! {"_id": client_id, "user": user_id })
-        .await?;
-
-    if !client.unlocked {
-        return Err(ClientError::Locked.into());
-    }
-
-    let audience = config.validation.aud.clone().unwrap();
-    let claims = ClientClaims::new(audience, &body.client, &claims.sub);
-
-    let token = claims.encode(&config)?;
-
-    let response = TokenResponse {
-        token,
-        expires_at: claims.exp,
-    };
-
-    db.set_client_issued(client_id).await?;
+    let response = TokenResponse { token, expires_at };
 
     Ok(Response::with_status(StatusCode::CREATED, response))
 }

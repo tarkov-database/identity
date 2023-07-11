@@ -3,6 +3,7 @@ use crate::{AppState, Result};
 use axum::extract::FromRef;
 use mongodb::{options::ClientOptions, Client, Collection};
 
+// TODO: rework database implementation
 #[derive(Debug, Clone)]
 pub struct Database {
     client: Client,

@@ -48,9 +48,10 @@ pub struct AppConfig {
     pub gh_client_secret: String,
     pub gh_redirect_uri: Url,
 
-    // JWT
-    pub jwt_secret: String,
-    pub jwt_audience: Vec<String>,
+    // Token
+    pub token_trust_anchor: PathBuf,
+    pub token_certs: PathBuf,
+    pub token_key: PathBuf,
 
     // Crypto
     pub crypto_key: String,

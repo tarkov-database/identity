@@ -3,7 +3,7 @@ name = "identity-server"
 version = "0.1.0"
 authors = ["Markus Wiegand <mail@morphy2k.dev>"]
 edition = "2021"
-rust-version = "1.68"
+rust-version = "1.70"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -50,6 +50,7 @@ chrono = { version = "0.4", features = ["serde"] }
 mongodb = { version = "2.4", default-features = false, features = [
   "tokio-runtime",
   "bson-chrono-0_4",
+  "bson-uuid-1",
   "tracing-unstable",
 ] }
 futures = { version = "0.3", default-features = false, features = [
@@ -60,7 +61,11 @@ aes-gcm-siv = "0.11"
 rand = { version = "0.8", features = ["std"] }
 sha-1 = "0.10"
 base64ct = { version = "1", features = ["std"] }
-jsonwebtoken = "8"
+pki-rs = { git = "https://github.com/morphy2k/pki-rs", version = "0.1.0-alpha.1", features = [
+  "ed25519",
+  "fingerprint",
+], default-features = false }
+jsonwebtoken = { version = "8.3", default-features = false }
 passwords = "3"
 envy = "0.4"
 dotenv = "0.15"
@@ -68,6 +73,8 @@ tracing = "0.1"
 tracing-futures = { version = "0.2", features = ["futures-03"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "1"
+rustls-pemfile = "1"
+uuid = { version = "1", features = ["serde", "v4", "fast-rng"] }
 
 [profile.release]
 lto = true
