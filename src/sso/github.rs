@@ -7,6 +7,7 @@ use crate::{
     http::HttpClient,
     model::{Response, Status},
     session::{SessionClaims, SessionResponse},
+    state::AppState,
     user::{Connection, SessionDocument, UserDocument, UserError},
     utils, Result,
 };
@@ -14,7 +15,7 @@ use crate::{
 use super::{oauth::StateClaims, SsoError};
 
 use axum::{
-    extract::{Extension, State, TypedHeader},
+    extract::{FromRef, State, TypedHeader},
     response::{IntoResponse, Redirect},
 };
 
@@ -160,6 +161,12 @@ impl GitHub {
     }
 }
 
+impl FromRef<AppState> for GitHub {
+    fn from_ref(state: &AppState) -> Self {
+        state.github_client.clone()
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct TokenRequest<'a> {
     client_id: &'a str,
@@ -236,7 +243,7 @@ struct Email {
 }
 
 pub(super) async fn authorize(
-    Extension(gh): Extension<GitHub>,
+    State(gh): State<GitHub>,
     State(signer): State<TokenSigner>,
 ) -> crate::Result<axum::response::Response> {
     let claims = StateClaims::new();
@@ -278,7 +285,7 @@ pub struct AuthorizedParams {
 pub(super) async fn authorized(
     Query(params): Query<AuthorizedParams>,
     TypedHeader(cookies): TypedHeader<Cookie>,
-    Extension(gh): Extension<GitHub>,
+    State(gh): State<GitHub>,
     State(db): State<Database>,
     State(global): State<GlobalConfig>,
     State(signer): State<TokenSigner>,

@@ -1,6 +1,10 @@
 use crate::{
     action::ActionError,
-    auth::{password::PasswordError, token::TokenError as AuthTokenError, AuthenticationError},
+    auth::{
+        password::PasswordError,
+        token::{self, TokenError as AuthTokenError},
+        AuthenticationError,
+    },
     client::ClientError,
     crypto::aead::AeadError,
     model::Status,
@@ -52,6 +56,13 @@ pub enum Error {
     Hyper(#[from] hyper::Error),
     #[error("password error: {0}")]
     Password(#[from] PasswordError),
+
+    #[error("token signer builder error: {0}")]
+    TokenBuilder(#[from] token::sign::BuilderError),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("pki error: {0}")]
+    Pki(#[from] pki_rs::error::Error),
 }
 
 impl axum::response::IntoResponse for Error {

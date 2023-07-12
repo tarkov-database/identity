@@ -1,7 +1,6 @@
-use crate::{AppState, Result};
+use crate::Result;
 
 use aes_gcm_siv::{aead::Aead, Aes256GcmSiv, KeyInit, Nonce};
-use axum::extract::FromRef;
 use base64ct::{Base64, Encoding};
 use rand::{distributions::Alphanumeric, Rng};
 
@@ -83,12 +82,6 @@ impl Aead256 {
         let output = self.decrypt(nc);
 
         Ok(output)
-    }
-}
-
-impl FromRef<AppState> for Aead256 {
-    fn from_ref(state: &AppState) -> Self {
-        state.aead.clone()
     }
 }
 

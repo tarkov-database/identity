@@ -1,8 +1,8 @@
-use std::sync::Arc;
-
-use crate::{crypto::certificate::CertificateStore, AppState};
+use crate::{crypto::certificate::CertificateStore, state::AppState};
 
 use super::{HeaderExt, Token, TokenError, TokenValidation};
+
+use std::sync::Arc;
 
 use axum::extract::FromRef;
 use jsonwebtoken::{Algorithm, DecodingKey, Header};

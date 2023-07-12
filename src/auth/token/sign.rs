@@ -1,4 +1,4 @@
-use crate::{crypto::certificate::CertificateStore, utils, AppState};
+use crate::{crypto::certificate::CertificateStore, state::AppState, utils};
 
 use super::{Token, TokenError};
 
@@ -21,6 +21,10 @@ pub struct TokenSigner {
 }
 
 impl TokenSigner {
+    pub fn builder() -> TokenSignerBuilder<WantsKey> {
+        TokenSignerBuilder::default()
+    }
+
     pub async fn sign<T>(&self, claims: &T) -> Result<String, TokenError>
     where
         T: Token + Serialize,

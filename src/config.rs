@@ -1,4 +1,4 @@
-use crate::{mail, AppState};
+use crate::{mail, state::AppState};
 
 use std::{
     net::{IpAddr, Ipv4Addr},

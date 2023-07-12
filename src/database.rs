@@ -1,4 +1,4 @@
-use crate::{AppState, Result};
+use crate::{state::AppState, Result};
 
 use axum::extract::FromRef;
 use mongodb::{options::ClientOptions, Client, Collection};

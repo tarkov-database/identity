@@ -1,4 +1,4 @@
-use crate::{error, http::HttpClient, model::Status, AppState, Result};
+use crate::{error, http::HttpClient, model::Status, state::AppState, Result};
 
 use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
