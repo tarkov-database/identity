@@ -90,12 +90,13 @@ dependencies = [
 
 [[package]]
 name = "argon2"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95c2fcf79ad1932ac6269a738109997a83c227c09b75842ae564dc8ede6a861c"
+checksum = "b2e554a8638bdc1e4eae9984845306cc95f8a9208ba8d49c3859fd958b46774d"
 dependencies = [
  "base64ct",
  "blake2",
+ "cpufeatures",
  "password-hash",
 ]
 
@@ -1387,7 +1388,7 @@ dependencies = [
 [[package]]
 name = "pki-rs"
 version = "0.1.0-alpha.1"
-source = "git+https://github.com/morphy2k/pki-rs#e4e85c78aa8f299304bf9712d1f516f95b41fba9"
+source = "git+https://github.com/morphy2k/pki-rs?tag=v0.1.0-alpha.1#e4e85c78aa8f299304bf9712d1f516f95b41fba9"
 dependencies = [
  "const-oid",
  "ed25519-dalek",
@@ -1560,7 +1561,7 @@ checksum = "b2eae68fc220f7cf2532e4494aded17545fce192d59cd996e0fe7887f4ceb575"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.3.2",
+ "regex-automata 0.3.3",
  "regex-syntax 0.7.4",
 ]
 
@@ -1575,9 +1576,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83d3daa6976cffb758ec878f108ba0e062a45b2d6ca3a2cca965338855476caf"
+checksum = "39354c10dd07468c2e73926b23bb9c2caca74c5501e38a35da70406f1d923310"
 dependencies = [
  "aho-corasick",
  "memchr",

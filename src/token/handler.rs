@@ -1,12 +1,13 @@
 use crate::{
     auth::token::{sign::TokenSigner, TokenError},
-    client::{ClientClaims, ClientError},
+    client::{model::ClientDocument, ClientClaims, ClientError},
     database::Database,
     extract::EitherTokenData,
     model::Response,
+    service::model::ServiceDocument,
     session::SessionClaims,
     token::AccessClaims,
-    user::UserError,
+    user::{model::UserDocument, UserError},
 };
 
 use axum::extract::State;
@@ -33,8 +34,10 @@ pub async fn get(
         EitherTokenData::Left(ClientClaims {
             ref jti, ref sub, ..
         }) => {
+            let clients = db.collection::<ClientDocument>();
+
             let id = ObjectId::parse_str(sub).map_err(|_| ClientError::InvalidId)?;
-            let client = db.get_client(doc! { "_id": id }).await?;
+            let client = clients.get_by_id(id).await?;
             match client.token {
                 Some(t) if &Uuid::from(t.id) == jti => {}
                 _ => return Err(TokenError::Invalid)?,
@@ -43,23 +46,26 @@ pub async fn get(
                 return Err(ClientError::Locked)?;
             }
 
-            let user = db.get_user(doc! { "_id": client.user }).await?;
+            let users = db.collection::<UserDocument>();
+            let user = users.get_by_id(client.user).await?;
             if user.locked {
                 return Err(UserError::Locked)?;
             }
 
-            let service = db.get_service(doc! { "_id": client.service }).await?;
+            let services = db.collection::<ServiceDocument>();
+            let service = services.get_by_id(client.service).await?;
 
             let claims = AccessClaims::with_scope(service.audience, sub, client.scope);
             let token = signer.sign(&claims).await?;
 
-            db.set_client_as_used(id).await?;
+            clients.set_token_as_seen(client.id).await?;
 
             (token, claims.exp)
         }
         EitherTokenData::Right(SessionClaims { jti, ref sub, .. }) => {
             let id = ObjectId::parse_str(sub).map_err(|_| UserError::InvalidId)?;
-            let user = db.get_user(doc! { "_id": id }).await?;
+            let users = db.collection::<UserDocument>();
+            let user = users.get_by_id(id).await?;
             if user.locked {
                 return Err(UserError::Locked)?;
             }

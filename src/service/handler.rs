@@ -1,18 +1,18 @@
 use crate::{
     auth::AuthenticationError,
-    database::Database,
+    database::Collection,
     error::QueryError,
     extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
     token::{AccessClaims, Scope},
 };
 
-use super::{ServiceDocument, ServiceError};
+use super::{model::ServiceDocument, ServiceError};
 
 use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
-use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
+use mongodb::bson::{self, doc, oid::ObjectId, Document};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,17 +49,25 @@ pub struct Filter {
     audience: Option<String>,
 }
 
+impl Into<bson::Document> for Filter {
+    fn into(self) -> bson::Document {
+        bson::to_document(&self).unwrap()
+    }
+}
+
 pub async fn list(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
-    State(db): State<Database>,
+    State(services): State<Collection<ServiceDocument>>,
 ) -> crate::Result<Response<List<ServiceResponse>>> {
     if !claims.scope.contains(&Scope::ServiceRead) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
-    let (services, total) = db.get_services(to_document(&filter).unwrap(), opts).await?;
+    let (services, total) = services
+        .get_all(Some(filter.into()), Some(opts.into()))
+        .await?;
     let list = List::new(total, services);
 
     Ok(Response::new(list))
@@ -68,7 +76,7 @@ pub async fn list(
 pub async fn get_by_id(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(services): State<Collection<ServiceDocument>>,
 ) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&Scope::ServiceRead) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -76,7 +84,7 @@ pub async fn get_by_id(
 
     let id = ObjectId::parse_str(&id).map_err(|_| ServiceError::InvalidId)?;
 
-    let service = db.get_service(doc! { "_id": id }).await?;
+    let service = services.get_by_id(id).await?;
 
     Ok(Response::with_status(StatusCode::OK, service.into()))
 }
@@ -92,7 +100,7 @@ pub struct CreateRequest {
 
 pub async fn create(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(services): State<Collection<ServiceDocument>>,
     Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&Scope::ServiceWrite) {
@@ -109,7 +117,7 @@ pub async fn create(
         created: Utc::now(),
     };
 
-    db.insert_service(&service).await?;
+    services.insert(&service).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, service.into()))
 }
@@ -126,7 +134,7 @@ pub struct UpdateRequest {
 pub async fn update(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(services): State<Collection<ServiceDocument>>,
     Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&Scope::ServiceWrite) {
@@ -135,7 +143,7 @@ pub async fn update(
 
     let id = ObjectId::parse_str(&id).map_err(|_| ServiceError::InvalidId)?;
 
-    let svc = db.get_service(doc! { "_id": id }).await?;
+    let svc = services.get_by_id(id).await?;
 
     if let Some(ref def) = body.scope_default {
         if let Some(ref scope) = body.scope {
@@ -168,7 +176,7 @@ pub async fn update(
         return Err(QueryError::InvalidBody.into());
     }
 
-    let doc = db.update_service(id, doc).await?;
+    let doc = services.update(id, doc).await?;
 
     Ok(Response::with_status(StatusCode::OK, doc.into()))
 }
@@ -176,7 +184,7 @@ pub async fn update(
 pub async fn delete(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(services): State<Collection<ServiceDocument>>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -184,7 +192,7 @@ pub async fn delete(
 
     let id = ObjectId::parse_str(&id).map_err(|_| ServiceError::InvalidId)?;
 
-    db.delete_service(id).await?;
+    services.delete(id).await?;
 
     Ok(Status::new(StatusCode::OK, "service deleted"))
 }

@@ -3,12 +3,15 @@ use crate::{
         password::Password,
         token::{sign::TokenSigner, TokenError},
     },
-    database::Database,
+    database::{Collection, Database},
     error::Error,
     extract::{Json, TokenData},
     model::Response,
     session::{SessionClaims, SessionError},
-    user::{SessionDocument, UserError},
+    user::{
+        model::{SessionDocument, UserDocument},
+        UserError,
+    },
 };
 
 use axum::extract::State;
@@ -34,12 +37,12 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
     State(signer): State<TokenSigner>,
     State(password): State<Password>,
     Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<SessionResponse>> {
-    let user = match db.get_user(doc! {"email": body.email }).await {
+    let user = match users.get_by_email(&body.email).await {
         Ok(u) => u,
         Err(e) => match e {
             Error::User(e) => match e {
@@ -77,19 +80,19 @@ pub async fn create(
         expires_at: claims.exp,
     };
 
-    db.set_user_session(user.id, session).await?;
+    users.set_session(user.id, session).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, response))
 }
 
 pub async fn refresh(
     TokenData(claims): TokenData<SessionClaims>,
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
     State(signer): State<TokenSigner>,
 ) -> crate::Result<Response<SessionResponse>> {
     let user_id = ObjectId::parse_str(&claims.sub).unwrap();
 
-    let user = db.get_user(doc! {"_id": user_id }).await?;
+    let user = users.get_by_id(user_id).await?;
 
     if user.locked {
         return Err(UserError::Locked)?;
@@ -117,7 +120,7 @@ pub async fn refresh(
 
     let session = SessionDocument::with_id(claims.jti);
 
-    db.set_user_session(user.id, session).await?;
+    users.set_session(user.id, session).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, response))
 }

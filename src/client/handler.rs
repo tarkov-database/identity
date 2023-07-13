@@ -1,15 +1,18 @@
 use crate::{
     auth::{token::sign::TokenSigner, AuthenticationError},
-    database::Database,
+    database::Collection,
     error::QueryError,
     extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
-    service::ServiceError,
+    service::{model::ServiceDocument, ServiceError},
     token::{AccessClaims, Scope},
     user::UserError,
 };
 
-use super::{ClientClaims, ClientDocument, ClientError, TokenDocument};
+use super::{
+    model::{ClientDocument, TokenDocument},
+    ClientClaims, ClientError,
+};
 
 use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
@@ -29,8 +32,6 @@ pub struct ClientResponse {
     pub locked: bool,
     pub token: Option<ClientTokenResponse>,
     #[serde(with = "ts_seconds")]
-    pub last_used: DateTime<Utc>,
-    #[serde(with = "ts_seconds")]
     pub last_modified: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
     pub created: DateTime<Utc>,
@@ -46,7 +47,6 @@ impl From<ClientDocument> for ClientResponse {
             scope: doc.scope,
             locked: doc.locked,
             token: doc.token.map(ClientTokenResponse::from),
-            last_used: doc.last_used,
             last_modified: doc.last_modified,
             created: doc.created,
         }
@@ -58,6 +58,8 @@ impl From<ClientDocument> for ClientResponse {
 pub struct ClientTokenResponse {
     pub id: Uuid,
     #[serde(with = "ts_seconds")]
+    pub last_seen: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
     pub expires: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
     pub issued: DateTime<Utc>,
@@ -67,6 +69,7 @@ impl From<TokenDocument> for ClientTokenResponse {
     fn from(doc: TokenDocument) -> Self {
         Self {
             id: doc.id.into(),
+            last_seen: doc.last_seen,
             expires: doc.expires,
             issued: doc.issued,
         }
@@ -88,7 +91,7 @@ pub async fn list(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
-    State(db): State<Database>,
+    State(clients): State<Collection<ClientDocument>>,
 ) -> crate::Result<Response<List<ClientResponse>>> {
     let user = if !claims.scope.contains(&Scope::ClientRead) {
         Some(&claims.sub)
@@ -96,15 +99,15 @@ pub async fn list(
         filter.user.as_ref()
     };
 
-    let mut f = to_document(&filter).unwrap();
+    let mut filter_doc = to_document(&filter).unwrap();
     if let Some(id) = user {
-        f.insert("user", ObjectId::parse_str(id).unwrap());
+        filter_doc.insert("user", ObjectId::parse_str(id).unwrap());
     }
     if let Some(id) = filter.service {
-        f.insert("service", ObjectId::parse_str(id).unwrap());
+        filter_doc.insert("service", ObjectId::parse_str(id).unwrap());
     }
 
-    let (clients, total) = db.get_clients(f, opts).await?;
+    let (clients, total) = clients.get_all(filter_doc, Some(opts.into())).await?;
     let list = List::new(total, clients);
 
     Ok(Response::new(list))
@@ -113,17 +116,16 @@ pub async fn list(
 pub async fn get_by_id(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(clients): State<Collection<ClientDocument>>,
 ) -> crate::Result<Response<ClientResponse>> {
     let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
-    let mut filter = doc! { "_id": id };
-    if !claims.scope.contains(&Scope::ClientRead) {
-        let id = ObjectId::parse_str(&claims.sub).unwrap();
-        filter.insert("user", id);
-    }
-
-    let client = db.get_client(filter).await?;
+    let client = if claims.scope.contains(&Scope::ClientRead) {
+        let user_id = ObjectId::parse_str(&claims.sub).unwrap();
+        clients.get_by_id_and_user(id, user_id).await?
+    } else {
+        clients.get_by_id(id).await?
+    };
 
     Ok(Response::with_status(StatusCode::OK, client.into()))
 }
@@ -139,7 +141,8 @@ pub struct CreateRequest {
 
 pub async fn create(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(clients): State<Collection<ClientDocument>>,
+    State(services): State<Collection<ServiceDocument>>,
     Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<ClientResponse>> {
     let user_id = if let Some(id) = body.user {
@@ -153,22 +156,21 @@ pub async fn create(
 
     let svc_id = ObjectId::parse_str(&body.service).map_err(|_| ServiceError::InvalidId)?;
 
-    let svc = db.get_service(doc! { "_id": svc_id }).await?;
+    let services = services.get_by_id(svc_id).await?;
 
     let client = ClientDocument {
         id: ObjectId::new(),
         user: user_id,
         name: body.name,
         service: svc_id,
-        scope: svc.scope_default,
+        scope: services.scope_default,
         locked: false,
         token: None,
-        last_used: Default::default(),
         last_modified: Utc::now(),
         created: Utc::now(),
     };
 
-    db.insert_client(&client).await?;
+    clients.insert(&client).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, client.into()))
 }
@@ -185,7 +187,7 @@ pub struct UpdateRequest {
 pub async fn update(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(clients): State<Collection<ClientDocument>>,
     Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<ClientResponse>> {
     let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
@@ -216,7 +218,7 @@ pub async fn update(
         None
     };
 
-    let doc = db.update_client(id, user, doc).await?;
+    let doc = clients.update(id, user, doc).await?;
 
     Ok(Response::with_status(StatusCode::OK, doc.into()))
 }
@@ -224,7 +226,7 @@ pub async fn update(
 pub async fn delete(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(clients): State<Collection<ClientDocument>>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&Scope::ClientWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -232,7 +234,7 @@ pub async fn delete(
 
     let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
-    db.delete_client(id).await?;
+    clients.delete(id).await?;
 
     Ok(Status::new(StatusCode::OK, "client deleted"))
 }
@@ -264,19 +266,21 @@ pub struct TokenResponse {
 pub async fn create_token(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(clients): State<Collection<ClientDocument>>,
     State(signer): State<TokenSigner>,
     Json(body): Json<TokenRequest>,
 ) -> crate::Result<Response<TokenResponse>> {
-    let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
+    let client_id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
+    let user_id = ObjectId::parse_str(&claims.sub).map_err(|_| UserError::InvalidId)?;
 
-    let client = db.get_client(doc! { "_id": id }).await?;
+    let client = if claims.scope.contains(&Scope::ClientWrite) {
+        clients.get_by_id(client_id).await?
+    } else {
+        clients.get_by_id_and_user(client_id, user_id).await?
+    };
+
     if client.locked {
         return Err(ClientError::Locked)?;
-    }
-
-    if !claims.scope.contains(&Scope::ClientWrite) && claims.sub != client.user.to_hex() {
-        return Err(AuthenticationError::InsufficientPermission)?;
     }
 
     let validity = Duration::seconds(body.validity as i64);
@@ -292,7 +296,7 @@ pub async fn create_token(
 
     let token = signer.sign(&claims).await?;
 
-    db.set_client_token(id, doc).await?;
+    clients.set_token(client_id, doc).await?;
 
     let response = TokenResponse {
         token,

@@ -1,14 +1,17 @@
 use crate::{
     auth::token::{sign::TokenSigner, verify::TokenVerifier},
     config::GlobalConfig,
-    database::Database,
-    error::{self, Error},
+    database::Collection,
+    error::{self},
     extract::Query,
     http::HttpClient,
     model::{Response, Status},
     session::{SessionClaims, SessionResponse},
     state::AppState,
-    user::{Connection, SessionDocument, UserDocument, UserError},
+    user::{
+        model::{Connection, SessionDocument, UserDocument},
+        UserError,
+    },
     utils, Result,
 };
 
@@ -286,7 +289,7 @@ pub(super) async fn authorized(
     Query(params): Query<AuthorizedParams>,
     TypedHeader(cookies): TypedHeader<Cookie>,
     State(gh): State<GitHub>,
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
     State(global): State<GlobalConfig>,
     State(signer): State<TokenSigner>,
     State(verifier): State<TokenVerifier>,
@@ -329,42 +332,37 @@ pub(super) async fn authorized(
         {"email": &email.address },
     ]};
 
-    let user = match db.get_user(query).await {
-        Ok(doc) => {
+    let user = match users.get_one(query, None).await? {
+        Some(doc) => {
             if let Some(c) = doc.connections.iter().find(|&c| c.is_github()) {
                 if c != &connection {
-                    db.update_user_connection(doc.id, connection).await?
+                    users.update_connection(doc.id, connection).await?
                 } else {
                     doc
                 }
             } else {
-                db.insert_user_connection(doc.id, connection).await?
+                users.insert_connection(doc.id, connection).await?
             }
         }
-        // TODO: improve pattern matching
-        Err(e) => match e {
-            Error::User(e) if e == UserError::NotFound => {
-                let domain =
-                    utils::get_email_domain(&email.address).ok_or(UserError::InvalidAddr)?;
+        None => {
+            let domain = utils::get_email_domain(&email.address).ok_or(UserError::InvalidAddr)?;
 
-                if !global.is_allowed_domain(domain) {
-                    return Err(UserError::DomainNotAllowed.into());
-                }
-
-                let doc = UserDocument {
-                    email: email.address,
-                    connections: vec![connection],
-                    can_login: true,
-                    verified: true,
-                    ..Default::default()
-                };
-
-                db.insert_user(&doc).await?;
-
-                doc
+            if !global.is_allowed_domain(domain) {
+                return Err(UserError::DomainNotAllowed.into());
             }
-            _ => return Err(e),
-        },
+
+            let doc = UserDocument {
+                email: email.address,
+                connections: vec![connection],
+                can_login: true,
+                verified: true,
+                ..Default::default()
+            };
+
+            users.insert(&doc).await?;
+
+            doc
+        }
     };
 
     let session = SessionDocument::new();
@@ -378,7 +376,7 @@ pub(super) async fn authorized(
         expires_at: claims.exp,
     };
 
-    db.set_user_session(user.id, session).await?;
+    users.set_session(user.id, session).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, response))
 }

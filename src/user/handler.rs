@@ -1,7 +1,7 @@
 use crate::{
     action::send_verification_mail,
     auth::{password::Password, token::sign::TokenSigner, AuthenticationError},
-    database::Database,
+    database::Collection,
     error::QueryError,
     extract::{Json, Query, TokenData},
     mail,
@@ -10,7 +10,10 @@ use crate::{
     utils, GlobalConfig,
 };
 
-use super::{Connection, Role, SessionDocument, UserDocument, UserError};
+use super::{
+    model::{Connection, Role, SessionDocument, UserDocument},
+    UserError,
+};
 
 use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Utc};
@@ -29,7 +32,7 @@ pub struct UserResponse {
     pub can_login: bool,
     pub locked: bool,
     pub connections: Vec<Connection>,
-    pub last_sessions: Vec<SessionResponse>,
+    pub sessions: Vec<SessionResponse>,
     #[serde(with = "ts_seconds")]
     pub last_modified: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
@@ -46,8 +49,8 @@ impl From<UserDocument> for UserResponse {
             locked: doc.locked,
             roles: doc.roles,
             connections: doc.connections,
-            last_sessions: doc
-                .last_sessions
+            sessions: doc
+                .sessions
                 .into_iter()
                 .map(SessionResponse::from)
                 .collect(),
@@ -88,11 +91,17 @@ pub struct Filter {
     role: Option<Role>,
 }
 
+impl Into<mongodb::bson::Document> for Filter {
+    fn into(self) -> mongodb::bson::Document {
+        to_document(&self).unwrap()
+    }
+}
+
 pub async fn list(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     Query(filter): Query<Filter>,
     Query(opts): Query<ListOptions>,
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
 ) -> crate::Result<Response<List<UserResponse>>> {
     let filter = if !claims.scope.contains(&Scope::UserRead) {
         doc! { "_id": ObjectId::parse_str(&claims.sub).unwrap() }
@@ -100,7 +109,7 @@ pub async fn list(
         to_document(&filter).unwrap()
     };
 
-    let (users, total) = db.get_users(filter, opts).await?;
+    let (users, total) = users.get_all(filter, Some(opts.into())).await?;
 
     let list = List::new(total, users);
 
@@ -110,7 +119,7 @@ pub async fn list(
 pub async fn get_by_id(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&Scope::UserRead) && claims.sub != id {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -118,7 +127,7 @@ pub async fn get_by_id(
 
     let id = ObjectId::parse_str(&id).map_err(|_| UserError::InvalidId)?;
 
-    let user = db.get_user(doc! { "_id": id }).await?;
+    let user = users.get_by_id(id).await?;
 
     Ok(Response::new(user.into()))
 }
@@ -134,11 +143,11 @@ pub struct CreateRequest {
 
 pub async fn create(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
     State(global): State<GlobalConfig>,
     State(password): State<Password>,
     State(mail): State<mail::Client>,
     State(signer): State<TokenSigner>,
+    State(users): State<Collection<UserDocument>>,
     Json(body): Json<CreateRequest>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&Scope::UserWrite) {
@@ -148,11 +157,11 @@ pub async fn create(
     let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
 
     if !global.is_allowed_domain(domain) {
-        return Err(UserError::DomainNotAllowed.into());
+        return Err(UserError::DomainNotAllowed)?;
     }
 
-    if db.get_user(doc! { "email": &body.email }).await.is_ok() {
-        return Err(UserError::AlreadyExists.into());
+    if users.get_by_email(&body.email).await.is_ok() {
+        return Err(UserError::AlreadyExists)?;
     }
 
     let password_hash = password.validate_and_hash(&body.password).await?;
@@ -165,7 +174,7 @@ pub async fn create(
         ..Default::default()
     };
 
-    db.insert_user(&user).await?;
+    users.insert(&user).await?;
 
     send_verification_mail(user.email.clone(), user.id.to_hex(), mail, signer).await?;
 
@@ -184,10 +193,10 @@ pub struct UpdateRequest {
 pub async fn update(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
     State(password): State<Password>,
     State(mail): State<mail::Client>,
     State(signer): State<TokenSigner>,
+    State(users): State<Collection<UserDocument>>,
     Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&Scope::UserWrite) && claims.sub != id {
@@ -221,7 +230,7 @@ pub async fn update(
         return Err(QueryError::InvalidBody.into());
     }
 
-    let doc = db.update_user_by_id(id, doc).await?;
+    let doc = users.update(id, doc).await?;
 
     Ok(Response::new(doc.into()))
 }
@@ -229,7 +238,7 @@ pub async fn update(
 pub async fn delete(
     Path(id): Path<String>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&Scope::UserWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
@@ -237,7 +246,7 @@ pub async fn delete(
 
     let id = ObjectId::parse_str(&id).map_err(|_| UserError::InvalidId)?;
 
-    db.delete_user(id).await?;
+    users.delete(id).await?;
 
     Ok(Status::new(StatusCode::OK, "user deleted"))
 }

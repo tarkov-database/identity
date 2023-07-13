@@ -61,7 +61,7 @@ aes-gcm-siv = "0.11"
 rand = { version = "0.8", features = ["std"] }
 sha-1 = "0.10"
 base64ct = { version = "1", features = ["std"] }
-pki-rs = { git = "https://github.com/morphy2k/pki-rs", version = "0.1.0-alpha.1", features = [
+pki-rs = { git = "https://github.com/morphy2k/pki-rs", tag = "v0.1.0-alpha.1", features = [
   "ed25519",
   "fingerprint",
 ], default-features = false }

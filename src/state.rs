@@ -58,7 +58,7 @@ impl AppState {
                 opts.tls = Some(Tls::Enabled(tls));
             }
 
-            Database::new(opts, &config.mongo_db)?
+            Database::new(config.mongo_db, opts)?
         };
 
         let http_client = HttpClient::default();

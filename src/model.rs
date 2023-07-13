@@ -1,5 +1,5 @@
 use hyper::StatusCode;
-use mongodb::bson::Document;
+use mongodb::{bson::Document, options::FindOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug)]
@@ -91,6 +91,17 @@ pub struct ListOptions {
     #[serde(default)]
     pub offset: u64,
     pub sort: Option<Document>,
+}
+
+impl Into<FindOptions> for ListOptions {
+    fn into(self) -> FindOptions {
+        FindOptions::builder()
+            .batch_size(self.limit as u32)
+            .skip(self.offset)
+            .limit(self.limit)
+            .sort(self.sort)
+            .build()
+    }
 }
 
 impl ListOptions {

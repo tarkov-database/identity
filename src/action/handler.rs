@@ -1,10 +1,13 @@
 use crate::{
     auth::{password::Password, token::sign::TokenSigner},
-    database::Database,
+    database::Collection,
     extract::{Json, Query, TokenData},
     mail,
     model::Status,
-    user::{Role, UserDocument, UserError},
+    user::{
+        model::{Role, UserDocument},
+        UserError,
+    },
     utils, GlobalConfig,
 };
 
@@ -24,7 +27,7 @@ pub struct RegisterRequest {
 }
 
 pub async fn register(
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
     State(global): State<GlobalConfig>,
     State(password): State<Password>,
     State(mail): State<mail::Client>,
@@ -37,8 +40,8 @@ pub async fn register(
         return Err(UserError::DomainNotAllowed.into());
     }
 
-    if db.get_user(doc! { "email": &body.email }).await.is_ok() {
-        return Err(UserError::AlreadyExists.into());
+    if users.get_by_email(&body.email).await.is_ok() {
+        return Err(UserError::AlreadyExists)?;
     }
 
     let password_hash = password.validate_and_hash(&body.password).await?;
@@ -58,7 +61,7 @@ pub async fn register(
         ..Default::default()
     };
 
-    db.insert_user(&user).await?;
+    users.insert(&user).await?;
 
     send_verification_mail(user.email, user.id.to_hex(), mail, signer).await?;
 
@@ -67,13 +70,13 @@ pub async fn register(
 
 pub async fn verify_email(
     TokenData(claims): TokenData<ActionClaims<Verify>>,
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
 ) -> crate::Result<Status> {
     let addr = claims.email.ok_or(ActionError::InvalidToken)?;
 
     let user_id = ObjectId::parse_str(claims.sub).unwrap();
 
-    let user = db.get_user(doc! {"_id": user_id }).await?;
+    let user = users.get_by_id(user_id).await?;
 
     if user.email != addr {
         return Err(ActionError::InvalidToken.into());
@@ -82,8 +85,7 @@ pub async fn verify_email(
         return Err(ActionError::AlreadyVerified.into());
     }
 
-    db.update_user_by_id(user_id, doc! { "verified": true })
-        .await?;
+    users.update(user_id, doc! { "verified": true }).await?;
 
     Ok(Status::new(StatusCode::OK, "account verified"))
 }
@@ -95,11 +97,11 @@ pub struct ResetOptions {
 
 pub async fn request_reset(
     Query(opts): Query<ResetOptions>,
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
     State(mail): State<mail::Client>,
     State(signer): State<TokenSigner>,
 ) -> crate::Result<Status> {
-    let user = db.get_user(doc! { "email": opts.email }).await?;
+    let user = users.get_by_email(&opts.email).await?;
 
     if !user.verified {
         return Err(ActionError::NotVerified.into());
@@ -117,7 +119,7 @@ pub struct ResetRequest {
 
 pub async fn reset_password(
     TokenData(claims): TokenData<ActionClaims<Reset>>,
-    State(db): State<Database>,
+    State(users): State<Collection<UserDocument>>,
     State(password): State<Password>,
     Json(body): Json<ResetRequest>,
 ) -> crate::Result<Status> {
@@ -125,7 +127,8 @@ pub async fn reset_password(
 
     let password_hash = password.validate_and_hash(&body.password).await?;
 
-    db.update_user_by_id(user_id, doc! { "password": password_hash })
+    users
+        .update(user_id, doc! { "password": password_hash })
         .await?;
 
     Ok(Status::new(StatusCode::OK, "new password set"))

@@ -81,7 +81,7 @@ impl AccessClaims<Scope> {
 
     fn with_roles<R>(user_id: &str, roles: R) -> Self
     where
-        R: IntoIterator<Item = user::Role>,
+        R: IntoIterator<Item = user::model::Role>,
     {
         let scope = Scope::from_roles(roles);
         Self::with_scope(iter::once(Self::AUDIENCE), user_id, scope)
@@ -134,7 +134,7 @@ pub enum Scope {
 impl Scope {
     pub fn from_roles<R>(roles: R) -> Vec<Scope>
     where
-        R: IntoIterator<Item = user::Role>,
+        R: IntoIterator<Item = user::model::Role>,
     {
         let mut scope = roles
             .into_iter()
@@ -149,15 +149,15 @@ impl Scope {
     }
 }
 
-impl From<user::Role> for Vec<Scope> {
-    fn from(role: user::Role) -> Self {
+impl From<user::model::Role> for Vec<Scope> {
+    fn from(role: user::model::Role) -> Self {
         match role {
-            user::Role::UserEditor => vec![Scope::UserRead, Scope::UserWrite],
-            user::Role::UserViewer => vec![Scope::UserRead],
-            user::Role::ClientEditor => vec![Scope::ClientRead, Scope::ClientWrite],
-            user::Role::ClientViewer => vec![Scope::ClientRead],
-            user::Role::ServiceEditor => vec![Scope::ServiceRead, Scope::ServiceWrite],
-            user::Role::ServiceViewer => vec![Scope::ServiceRead],
+            user::model::Role::UserEditor => vec![Scope::UserRead, Scope::UserWrite],
+            user::model::Role::UserViewer => vec![Scope::UserRead],
+            user::model::Role::ClientEditor => vec![Scope::ClientRead, Scope::ClientWrite],
+            user::model::Role::ClientViewer => vec![Scope::ClientRead],
+            user::model::Role::ServiceEditor => vec![Scope::ServiceRead, Scope::ServiceWrite],
+            user::model::Role::ServiceViewer => vec![Scope::ServiceRead],
         }
     }
 }

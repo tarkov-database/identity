@@ -17,6 +17,8 @@ pub use routes::routes;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
+    #[error("invalid session")]
+    InvalidSession,
     #[error("credentials are wrong")]
     BadCredentials,
     #[error("not authorized: {0}")]
@@ -30,7 +32,9 @@ impl error::ErrorResponse for SessionError {
 
     fn status_code(&self) -> StatusCode {
         match self {
-            SessionError::BadCredentials | SessionError::LoginRequired => StatusCode::UNAUTHORIZED,
+            SessionError::BadCredentials
+            | SessionError::LoginRequired
+            | SessionError::InvalidSession => StatusCode::UNAUTHORIZED,
             SessionError::NotAuthorized(_) => StatusCode::FORBIDDEN,
         }
     }
