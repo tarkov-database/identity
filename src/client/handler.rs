@@ -4,9 +4,8 @@ use crate::{
     error::QueryError,
     extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
-    service::{model::ServiceDocument, ServiceError},
+    service::model::ServiceDocument,
     token::{AccessClaims, Scope},
-    user::UserError,
 };
 
 use super::{
@@ -80,11 +79,11 @@ impl From<TokenDocument> for ClientTokenResponse {
 #[serde(rename_all = "camelCase")]
 pub struct Filter {
     #[serde(skip_serializing_if = "Option::is_none")]
-    user: Option<String>,
+    user: Option<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     approved: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    service: Option<String>,
+    service: Option<ObjectId>,
 }
 
 pub async fn list(
@@ -101,10 +100,10 @@ pub async fn list(
 
     let mut filter_doc = to_document(&filter).unwrap();
     if let Some(id) = user {
-        filter_doc.insert("user", ObjectId::parse_str(id).unwrap());
+        filter_doc.insert("user", id);
     }
     if let Some(id) = filter.service {
-        filter_doc.insert("service", ObjectId::parse_str(id).unwrap());
+        filter_doc.insert("service", id);
     }
 
     let (clients, total) = clients.get_all(filter_doc, Some(opts.into())).await?;
@@ -114,15 +113,12 @@ pub async fn list(
 }
 
 pub async fn get_by_id(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(clients): State<Collection<ClientDocument>>,
 ) -> crate::Result<Response<ClientResponse>> {
-    let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
-
     let client = if claims.scope.contains(&Scope::ClientRead) {
-        let user_id = ObjectId::parse_str(&claims.sub).unwrap();
-        clients.get_by_id_and_user(id, user_id).await?
+        clients.get_by_id_and_user(id, claims.sub).await?
     } else {
         clients.get_by_id(id).await?
     };
@@ -133,9 +129,9 @@ pub async fn get_by_id(
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRequest {
-    user: Option<String>,
+    user: Option<ObjectId>,
     name: String,
-    service: String,
+    service: ObjectId,
     scope: Option<Vec<String>>,
 }
 
@@ -149,21 +145,19 @@ pub async fn create(
         if !claims.scope.contains(&Scope::ClientWrite) && claims.sub != id {
             return Err(AuthenticationError::InsufficientPermission.into());
         }
-        ObjectId::parse_str(&id).map_err(|_| UserError::InvalidId)?
+        id
     } else {
-        ObjectId::parse_str(&claims.sub).unwrap()
+        claims.sub
     };
 
-    let svc_id = ObjectId::parse_str(&body.service).map_err(|_| ServiceError::InvalidId)?;
-
-    let services = services.get_by_id(svc_id).await?;
+    let service = services.get_by_id(body.service).await?;
 
     let client = ClientDocument {
         id: ObjectId::new(),
         user: user_id,
         name: body.name,
-        service: svc_id,
-        scope: services.scope_default,
+        service: service.id,
+        scope: service.scope_default,
         locked: false,
         token: None,
         last_modified: Utc::now(),
@@ -178,24 +172,21 @@ pub async fn create(
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRequest {
-    user: Option<String>,
+    user: Option<ObjectId>,
     name: Option<String>,
     scope: Option<Vec<String>>,
     locked: Option<bool>,
 }
 
 pub async fn update(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(clients): State<Collection<ClientDocument>>,
     Json(body): Json<UpdateRequest>,
 ) -> crate::Result<Response<ClientResponse>> {
-    let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
-
     let mut doc = Document::new();
     if claims.scope.contains(&Scope::ClientWrite) {
         if let Some(v) = body.user {
-            let id = ObjectId::parse_str(&v).map_err(|_| UserError::InvalidId)?;
             doc.insert("user", id);
         }
         if let Some(v) = body.locked {
@@ -213,7 +204,7 @@ pub async fn update(
     }
 
     let user = if !claims.scope.contains(&Scope::ClientWrite) {
-        Some(ObjectId::parse_str(&claims.sub).unwrap())
+        Some(claims.sub)
     } else {
         None
     };
@@ -224,15 +215,13 @@ pub async fn update(
 }
 
 pub async fn delete(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(clients): State<Collection<ClientDocument>>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&Scope::ClientWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
-
-    let id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
 
     clients.delete(id).await?;
 
@@ -264,19 +253,16 @@ pub struct TokenResponse {
 }
 
 pub async fn create_token(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(clients): State<Collection<ClientDocument>>,
     State(signer): State<TokenSigner>,
     Json(body): Json<TokenRequest>,
 ) -> crate::Result<Response<TokenResponse>> {
-    let client_id = ObjectId::parse_str(&id).map_err(|_| ClientError::InvalidId)?;
-    let user_id = ObjectId::parse_str(&claims.sub).map_err(|_| UserError::InvalidId)?;
-
     let client = if claims.scope.contains(&Scope::ClientWrite) {
-        clients.get_by_id(client_id).await?
+        clients.get_by_id(id).await?
     } else {
-        clients.get_by_id_and_user(client_id, user_id).await?
+        clients.get_by_id_and_user(id, claims.sub).await?
     };
 
     if client.locked {
@@ -292,11 +278,11 @@ pub async fn create_token(
     let expires = Utc::now() + validity;
 
     let doc = TokenDocument::new(expires);
-    let claims = ClientClaims::new(doc.id, &client.id.to_hex(), &client.user.to_hex(), expires);
+    let claims = ClientClaims::new(doc.id, client.id, expires);
 
     let token = signer.sign(&claims).await?;
 
-    clients.set_token(client_id, doc).await?;
+    clients.set_token(id, doc).await?;
 
     let response = TokenResponse {
         token,

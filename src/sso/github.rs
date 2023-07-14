@@ -288,7 +288,7 @@ pub struct AuthorizedParams {
 pub(super) async fn authorized(
     Query(params): Query<AuthorizedParams>,
     TypedHeader(cookies): TypedHeader<Cookie>,
-    State(gh): State<GitHub>,
+    State(github): State<GitHub>,
     State(users): State<Collection<UserDocument>>,
     State(global): State<GlobalConfig>,
     State(signer): State<TokenSigner>,
@@ -305,15 +305,15 @@ pub(super) async fn authorized(
         .await
         .map_err(|_| SsoError::InvalidState)?;
 
-    let TokenResponse { access_token, .. } = gh.get_access_token(&params.code).await?;
+    let TokenResponse { access_token, .. } = github.get_access_token(&params.code).await?;
     let access_token = access_token.ok_or_else(|| {
         tracing::error!("missing access token field");
         SsoError::from(GitHubError::UnknownError)
     })?;
 
     let (user, emails) = tokio::try_join!(
-        gh.get_current_user(&access_token),
-        gh.get_emails(&access_token)
+        github.get_current_user(&access_token),
+        github.get_emails(&access_token)
     )?;
 
     let email = emails
@@ -367,7 +367,7 @@ pub(super) async fn authorized(
 
     let session = SessionDocument::new();
 
-    let claims = SessionClaims::new(session.id, &user.id.to_hex());
+    let claims = SessionClaims::new(session.id, user.id);
     let token = signer.sign(&claims).await?;
 
     let response = SessionResponse {

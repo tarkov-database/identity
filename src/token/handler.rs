@@ -31,13 +31,10 @@ pub async fn get(
     State(signer): State<TokenSigner>,
 ) -> crate::Result<Response<TokenResponse>> {
     let (token, expires_at) = match claims {
-        EitherTokenData::Left(ClientClaims {
-            ref jti, ref sub, ..
-        }) => {
+        EitherTokenData::Left(ClientClaims { ref jti, sub, .. }) => {
             let clients = db.collection::<ClientDocument>();
 
-            let id = ObjectId::parse_str(sub).map_err(|_| ClientError::InvalidId)?;
-            let client = clients.get_by_id(id).await?;
+            let client = clients.get_by_id(sub).await?;
             match client.token {
                 Some(t) if &Uuid::from(t.id) == jti => {}
                 _ => return Err(TokenError::Invalid)?,
@@ -62,10 +59,9 @@ pub async fn get(
 
             (token, claims.exp)
         }
-        EitherTokenData::Right(SessionClaims { jti, ref sub, .. }) => {
-            let id = ObjectId::parse_str(sub).map_err(|_| UserError::InvalidId)?;
+        EitherTokenData::Right(SessionClaims { jti, sub, .. }) => {
             let users = db.collection::<UserDocument>();
-            let user = users.get_by_id(id).await?;
+            let user = users.get_by_id(sub).await?;
             if user.locked {
                 return Err(UserError::Locked)?;
             }
@@ -73,7 +69,7 @@ pub async fn get(
                 return Err(TokenError::Invalid)?;
             }
 
-            let claims = AccessClaims::with_roles(&user.id.to_hex(), user.roles);
+            let claims = AccessClaims::with_roles(user.id, user.roles);
             let token = signer.sign(&claims).await?;
 
             (token, claims.exp)

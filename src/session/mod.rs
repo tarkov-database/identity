@@ -9,6 +9,7 @@ use crate::{
 
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
+use mongodb::bson::{oid::ObjectId, serde_helpers::serialize_object_id_as_hex_string};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -55,7 +56,8 @@ pub struct SessionClaims {
     pub nbf: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
     pub iat: DateTime<Utc>,
-    pub sub: String,
+    #[serde(serialize_with = "serialize_object_id_as_hex_string")]
+    pub sub: ObjectId,
 }
 
 impl SessionClaims {
@@ -63,14 +65,14 @@ impl SessionClaims {
 
     pub const DEFAULT_EXP_MIN: i64 = 60;
 
-    pub fn new(id: impl Into<Uuid>, user_id: &str) -> Self {
+    pub fn new(id: impl Into<Uuid>, user_id: ObjectId) -> Self {
         Self {
             jti: id.into(),
             aud: Self::AUDIENCE_SESSION.into(),
             exp: Utc::now() + Duration::minutes(Self::DEFAULT_EXP_MIN),
             nbf: Utc::now(),
             iat: Utc::now(),
-            sub: user_id.into(),
+            sub: user_id,
         }
     }
 

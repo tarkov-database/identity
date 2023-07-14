@@ -63,7 +63,7 @@ pub async fn register(
 
     users.insert(&user).await?;
 
-    send_verification_mail(user.email, user.id.to_hex(), mail, signer).await?;
+    send_verification_mail(user.email, user.id, mail, signer).await?;
 
     Ok(Status::new(StatusCode::CREATED, "user registered"))
 }
@@ -74,9 +74,7 @@ pub async fn verify_email(
 ) -> crate::Result<Status> {
     let addr = claims.email.ok_or(ActionError::InvalidToken)?;
 
-    let user_id = ObjectId::parse_str(claims.sub).unwrap();
-
-    let user = users.get_by_id(user_id).await?;
+    let user = users.get_by_id(claims.sub).await?;
 
     if user.email != addr {
         return Err(ActionError::InvalidToken.into());
@@ -85,7 +83,7 @@ pub async fn verify_email(
         return Err(ActionError::AlreadyVerified.into());
     }
 
-    users.update(user_id, doc! { "verified": true }).await?;
+    users.update(claims.sub, doc! { "verified": true }).await?;
 
     Ok(Status::new(StatusCode::OK, "account verified"))
 }
@@ -107,7 +105,7 @@ pub async fn request_reset(
         return Err(ActionError::NotVerified.into());
     }
 
-    send_reset_mail(user.email, user.id.to_hex(), mail, signer).await?;
+    send_reset_mail(user.email, user.id, mail, signer).await?;
 
     Ok(Status::new(StatusCode::OK, "reset email sent"))
 }
@@ -123,12 +121,10 @@ pub async fn reset_password(
     State(password): State<Password>,
     Json(body): Json<ResetRequest>,
 ) -> crate::Result<Status> {
-    let user_id = ObjectId::parse_str(claims.sub).unwrap();
-
     let password_hash = password.validate_and_hash(&body.password).await?;
 
     users
-        .update(user_id, doc! { "password": password_hash })
+        .update(claims.sub, doc! { "password": password_hash })
         .await?;
 
     Ok(Status::new(StatusCode::OK, "new password set"))

@@ -104,7 +104,7 @@ pub async fn list(
     State(users): State<Collection<UserDocument>>,
 ) -> crate::Result<Response<List<UserResponse>>> {
     let filter = if !claims.scope.contains(&Scope::UserRead) {
-        doc! { "_id": ObjectId::parse_str(&claims.sub).unwrap() }
+        doc! { "_id": claims.sub }
     } else {
         to_document(&filter).unwrap()
     };
@@ -117,15 +117,13 @@ pub async fn list(
 }
 
 pub async fn get_by_id(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(users): State<Collection<UserDocument>>,
 ) -> crate::Result<Response<UserResponse>> {
     if !claims.scope.contains(&Scope::UserRead) && claims.sub != id {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
-
-    let id = ObjectId::parse_str(&id).map_err(|_| UserError::InvalidId)?;
 
     let user = users.get_by_id(id).await?;
 
@@ -176,7 +174,7 @@ pub async fn create(
 
     users.insert(&user).await?;
 
-    send_verification_mail(user.email.clone(), user.id.to_hex(), mail, signer).await?;
+    send_verification_mail(user.email.clone(), user.id, mail, signer).await?;
 
     Ok(Response::with_status(StatusCode::CREATED, user.into()))
 }
@@ -191,7 +189,7 @@ pub struct UpdateRequest {
 }
 
 pub async fn update(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(password): State<Password>,
     State(mail): State<mail::Client>,
@@ -203,11 +201,9 @@ pub async fn update(
         return Err(AuthenticationError::InsufficientPermission.into());
     }
 
-    let id = ObjectId::parse_str(&id).map_err(|_| UserError::InvalidId)?;
-
     let mut doc = Document::new();
     if let Some(v) = body.email {
-        send_verification_mail(v.clone(), id.to_hex(), mail, signer).await?;
+        send_verification_mail(v.clone(), id, mail, signer).await?;
         doc.insert("verified", false);
         doc.insert("email", v);
     }
@@ -236,15 +232,13 @@ pub async fn update(
 }
 
 pub async fn delete(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(users): State<Collection<UserDocument>>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&Scope::UserWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
-
-    let id = ObjectId::parse_str(&id).map_err(|_| UserError::InvalidId)?;
 
     users.delete(id).await?;
 

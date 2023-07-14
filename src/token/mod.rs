@@ -12,6 +12,7 @@ use crate::{
 
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
+use mongodb::bson::{oid::ObjectId, serde_helpers::serialize_object_id_as_hex_string};
 use serde::{Deserialize, Serialize};
 
 pub use routes::routes;
@@ -41,14 +42,15 @@ pub struct AccessClaims<S = String> {
     pub nbf: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
     pub iat: DateTime<Utc>,
-    pub sub: String,
+    #[serde(serialize_with = "serialize_object_id_as_hex_string")]
+    pub sub: ObjectId,
     pub scope: Vec<S>,
 }
 
 impl<S> AccessClaims<S> {
     pub const DEFAULT_EXP_MIN: i64 = 30;
 
-    fn new<A>(aud: A, sub: &str) -> Self
+    fn new<A>(aud: A, sub: ObjectId) -> Self
     where
         A: IntoIterator,
         A::Item: ToString,
@@ -58,12 +60,12 @@ impl<S> AccessClaims<S> {
             exp: Utc::now() + Duration::minutes(Self::DEFAULT_EXP_MIN),
             nbf: Utc::now(),
             iat: Utc::now(),
-            sub: sub.into(),
+            sub,
             scope: Vec::default(),
         }
     }
 
-    fn with_scope<A, I>(aud: A, sub: &str, scope: I) -> Self
+    fn with_scope<A, I>(aud: A, sub: ObjectId, scope: I) -> Self
     where
         A: IntoIterator,
         A::Item: ToString,
@@ -79,7 +81,7 @@ impl<S> AccessClaims<S> {
 impl AccessClaims<Scope> {
     const AUDIENCE: &str = "identity/resource";
 
-    fn with_roles<R>(user_id: &str, roles: R) -> Self
+    fn with_roles<R>(user_id: ObjectId, roles: R) -> Self
     where
         R: IntoIterator<Item = user::model::Role>,
     {

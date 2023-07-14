@@ -11,6 +11,7 @@ use std::{collections::HashMap, marker::PhantomData};
 
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
+use mongodb::bson::{oid::ObjectId, serde_helpers::serialize_object_id_as_hex_string};
 use serde::{Deserialize, Serialize};
 
 pub use routes::routes;
@@ -66,7 +67,8 @@ pub struct ActionClaims<T> {
     pub nbf: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
     pub iat: DateTime<Utc>,
-    pub sub: String,
+    #[serde(serialize_with = "serialize_object_id_as_hex_string")]
+    pub sub: ObjectId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
 
@@ -82,7 +84,7 @@ impl<T: ActionType> Default for ActionClaims<T> {
             exp: now + Duration::hours(1),
             nbf: now,
             iat: now,
-            sub: String::default(),
+            sub: ObjectId::default(),
             email: None,
             marker: PhantomData,
         }
@@ -90,7 +92,7 @@ impl<T: ActionType> Default for ActionClaims<T> {
 }
 
 impl ActionClaims<Verify> {
-    pub fn new_verify(user_id: String, email: String) -> Self {
+    pub fn new_verify(user_id: ObjectId, email: String) -> Self {
         Self {
             sub: user_id,
             email: Some(email),
@@ -100,7 +102,7 @@ impl ActionClaims<Verify> {
 }
 
 impl ActionClaims<Reset> {
-    pub fn new_reset(user_id: String) -> Self {
+    pub fn new_reset(user_id: ObjectId) -> Self {
         Self {
             sub: user_id,
             ..Self::default()
@@ -138,7 +140,7 @@ impl<T: ActionType> TokenValidation for ActionClaims<T> {
 
 pub async fn send_verification_mail(
     addr: String,
-    user_id: String,
+    user_id: ObjectId,
     client: mail::Client,
     signer: TokenSigner,
 ) -> crate::Result<()> {
@@ -160,11 +162,11 @@ pub async fn send_verification_mail(
 
 async fn send_reset_mail(
     addr: String,
-    user_id: String,
+    user_id: ObjectId,
     client: mail::Client,
     signer: TokenSigner,
 ) -> crate::Result<()> {
-    let claims = ActionClaims::new_reset(user_id.clone());
+    let claims = ActionClaims::new_reset(user_id);
     let token = signer.sign(&claims).await?;
 
     const TEMPLATE_NAME: &str = "identity.action.reset";

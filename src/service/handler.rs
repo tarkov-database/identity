@@ -74,15 +74,13 @@ pub async fn list(
 }
 
 pub async fn get_by_id(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(services): State<Collection<ServiceDocument>>,
 ) -> crate::Result<Response<ServiceResponse>> {
     if !claims.scope.contains(&Scope::ServiceRead) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
-
-    let id = ObjectId::parse_str(&id).map_err(|_| ServiceError::InvalidId)?;
 
     let service = services.get_by_id(id).await?;
 
@@ -132,7 +130,7 @@ pub struct UpdateRequest {
 }
 
 pub async fn update(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(services): State<Collection<ServiceDocument>>,
     Json(body): Json<UpdateRequest>,
@@ -140,8 +138,6 @@ pub async fn update(
     if !claims.scope.contains(&Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
-
-    let id = ObjectId::parse_str(&id).map_err(|_| ServiceError::InvalidId)?;
 
     let svc = services.get_by_id(id).await?;
 
@@ -182,15 +178,13 @@ pub async fn update(
 }
 
 pub async fn delete(
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(services): State<Collection<ServiceDocument>>,
 ) -> crate::Result<Status> {
     if !claims.scope.contains(&Scope::ServiceWrite) {
         return Err(AuthenticationError::InsufficientPermission.into());
     }
-
-    let id = ObjectId::parse_str(&id).map_err(|_| ServiceError::InvalidId)?;
 
     services.delete(id).await?;
 

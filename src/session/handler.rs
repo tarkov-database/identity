@@ -71,7 +71,7 @@ pub async fn create(
 
     let session = SessionDocument::new();
 
-    let claims = SessionClaims::new(session.id, &user.id.to_hex());
+    let claims = SessionClaims::new(session.id, user.id);
     let token = signer.sign(&claims).await?;
 
     let response = SessionResponse {
@@ -90,9 +90,7 @@ pub async fn refresh(
     State(users): State<Collection<UserDocument>>,
     State(signer): State<TokenSigner>,
 ) -> crate::Result<Response<SessionResponse>> {
-    let user_id = ObjectId::parse_str(&claims.sub).unwrap();
-
-    let user = users.get_by_id(user_id).await?;
+    let user = users.get_by_id(claims.sub).await?;
 
     if user.locked {
         return Err(UserError::Locked)?;

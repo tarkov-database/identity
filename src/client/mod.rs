@@ -10,6 +10,7 @@ use crate::{
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use http::StatusCode;
+use mongodb::bson::{oid::ObjectId, serde_helpers::serialize_object_id_as_hex_string};
 use serde::{Deserialize, Serialize};
 
 pub use routes::routes;
@@ -54,22 +55,21 @@ pub struct ClientClaims {
     pub nbf: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
     pub iat: DateTime<Utc>,
-    pub sub: String,
-    pub iss: String,
+    #[serde(serialize_with = "serialize_object_id_as_hex_string")]
+    pub sub: ObjectId,
 }
 
 impl ClientClaims {
     const AUDIENCE_CLIENT: &str = "identity/client";
 
-    fn new(id: impl Into<Uuid>, sub: &str, iss: &str, exp: DateTime<Utc>) -> Self {
+    fn new(id: impl Into<Uuid>, client_id: ObjectId, exp: DateTime<Utc>) -> Self {
         Self {
             jti: id.into(),
             aud: Self::AUDIENCE_CLIENT.to_string(),
             exp,
             nbf: Utc::now(),
             iat: Utc::now(),
-            sub: sub.into(),
-            iss: iss.into(),
+            sub: client_id,
         }
     }
 }

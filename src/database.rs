@@ -5,7 +5,7 @@ use crate::{state::AppState, Result};
 use axum::extract::FromRef;
 use futures::TryStreamExt;
 use mongodb::{
-    bson::{oid::ObjectId, Bson, Document},
+    bson::{Bson, Document},
     options::{
         AggregateOptions, ClientOptions, DeleteOptions, FindOneAndUpdateOptions, FindOneOptions,
         FindOptions, InsertManyOptions, InsertOneOptions, UpdateOptions,
