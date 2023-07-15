@@ -50,7 +50,7 @@ pub struct AccessClaims<S = String> {
 impl<S> AccessClaims<S> {
     pub const DEFAULT_EXP_MIN: i64 = 30;
 
-    fn new<A>(aud: A, sub: ObjectId) -> Self
+    pub fn new<A>(aud: A, sub: ObjectId) -> Self
     where
         A: IntoIterator,
         A::Item: ToString,
@@ -65,7 +65,7 @@ impl<S> AccessClaims<S> {
         }
     }
 
-    fn with_scope<A, I>(aud: A, sub: ObjectId, scope: I) -> Self
+    pub fn with_scope<A, I>(aud: A, sub: ObjectId, scope: I) -> Self
     where
         A: IntoIterator,
         A::Item: ToString,
@@ -81,7 +81,7 @@ impl<S> AccessClaims<S> {
 impl AccessClaims<Scope> {
     const AUDIENCE: &str = "identity/resource";
 
-    fn with_roles<R>(user_id: ObjectId, roles: R) -> Self
+    pub fn with_roles<R>(user_id: ObjectId, roles: R) -> Self
     where
         R: IntoIterator<Item = user::model::Role>,
     {

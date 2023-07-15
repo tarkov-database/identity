@@ -1,24 +1,26 @@
 use crate::{
-    auth::{token::sign::TokenSigner, AuthenticationError},
+    auth::{password::Password, AuthenticationError},
+    crypto,
     database::Collection,
     error::QueryError,
     extract::{Json, Query, TokenData},
     model::{List, ListOptions, Response, Status},
+    oauth::{CLIENT_ID_LENGTH, CLIENT_SECRET_LENGTH},
     service::model::ServiceDocument,
     token::{AccessClaims, Scope},
 };
 
 use super::{
-    model::{ClientDocument, TokenDocument},
-    ClientClaims, ClientError,
+    model::{ClientDocument, OauthDocument},
+    ClientError, CREDENTIALS_MAX_VALIDITY,
 };
 
 use axum::extract::{Path, State};
+use base64ct::{Base64UrlUnpadded, Encoding};
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,7 +31,7 @@ pub struct ClientResponse {
     pub name: String,
     pub scope: Vec<String>,
     pub locked: bool,
-    pub token: Option<ClientTokenResponse>,
+    pub oauth: Option<OauthResponse>,
     #[serde(with = "ts_seconds")]
     pub last_modified: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
@@ -45,7 +47,7 @@ impl From<ClientDocument> for ClientResponse {
             name: doc.name,
             scope: doc.scope,
             locked: doc.locked,
-            token: doc.token.map(ClientTokenResponse::from),
+            oauth: doc.oauth.map(OauthResponse::from),
             last_modified: doc.last_modified,
             created: doc.created,
         }
@@ -54,8 +56,8 @@ impl From<ClientDocument> for ClientResponse {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ClientTokenResponse {
-    pub id: Uuid,
+pub struct OauthResponse {
+    pub id: String,
     #[serde(with = "ts_seconds")]
     pub last_seen: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
@@ -64,10 +66,10 @@ pub struct ClientTokenResponse {
     pub issued: DateTime<Utc>,
 }
 
-impl From<TokenDocument> for ClientTokenResponse {
-    fn from(doc: TokenDocument) -> Self {
+impl From<OauthDocument> for OauthResponse {
+    fn from(doc: OauthDocument) -> Self {
         Self {
-            id: doc.id.into(),
+            id: doc.id,
             last_seen: doc.last_seen,
             expires: doc.expires,
             issued: doc.issued,
@@ -159,7 +161,7 @@ pub async fn create(
         service: service.id,
         scope: service.scope_default,
         locked: false,
-        token: None,
+        oauth: None,
         last_modified: Utc::now(),
         created: Utc::now(),
     };
@@ -228,37 +230,34 @@ pub async fn delete(
     Ok(Status::new(StatusCode::OK, "client deleted"))
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TokenRequest {
-    /// Period of validity for the token in seconds.
-    #[serde(default)]
-    validity: u64,
+const fn default_validity() -> u64 {
+    CREDENTIALS_MAX_VALIDITY
 }
 
-impl Default for TokenRequest {
-    fn default() -> Self {
-        Self {
-            validity: Duration::days(365).num_seconds() as u64,
-        }
-    }
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialsRequest {
+    /// Period of validity in seconds
+    #[serde(default = "default_validity")]
+    validity: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TokenResponse {
-    token: String,
+pub struct CredentialsResponse {
+    client_id: String,
+    secret: String,
     #[serde(with = "ts_seconds")]
     expires: DateTime<Utc>,
 }
 
-pub async fn create_token(
+pub async fn create_credentials(
     Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(clients): State<Collection<ClientDocument>>,
-    State(signer): State<TokenSigner>,
-    Json(body): Json<TokenRequest>,
-) -> crate::Result<Response<TokenResponse>> {
+    State(password): State<Password>,
+    Json(body): Json<CredentialsRequest>,
+) -> crate::Result<Response<CredentialsResponse>> {
     let client = if claims.scope.contains(&Scope::ClientWrite) {
         clients.get_by_id(id).await?
     } else {
@@ -271,22 +270,31 @@ pub async fn create_token(
 
     let validity = Duration::seconds(body.validity as i64);
 
-    if validity > Duration::days(365) || validity < Duration::seconds(60) {
-        return Err(ClientError::InvalidExpiration)?;
+    if validity > Duration::seconds(CREDENTIALS_MAX_VALIDITY as i64)
+        || validity < Duration::seconds(60)
+    {
+        return Err(ClientError::InvalidValidity)?;
     }
 
     let expires = Utc::now() + validity;
 
-    let doc = TokenDocument::new(expires);
-    let claims = ClientClaims::new(doc.id, client.id, expires);
+    let client_id = crypto::gen::generate_id::<CLIENT_ID_LENGTH>();
+    let client_secret = crypto::gen::generate_secret::<CLIENT_SECRET_LENGTH>();
 
-    let token = signer.sign(&claims).await?;
+    let doc = OauthDocument {
+        id: client_id.clone(),
+        secret: password.hash(client_secret)?,
+        last_seen: Default::default(),
+        expires,
+        issued: Utc::now(),
+    };
 
-    clients.set_token(id, doc).await?;
+    clients.set_oauth(id, doc).await?;
 
-    let response = TokenResponse {
-        token,
-        expires: claims.exp,
+    let response = CredentialsResponse {
+        client_id,
+        secret: Base64UrlUnpadded::encode_string(&client_secret),
+        expires,
     };
 
     Ok(Response::with_status(StatusCode::CREATED, response))

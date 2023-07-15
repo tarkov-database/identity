@@ -8,6 +8,7 @@ use crate::{
     client::ClientError,
     crypto::aead::AeadError,
     model::Status,
+    oauth::OauthError,
     service::ServiceError,
     session::SessionError,
     sso::SsoError,
@@ -40,6 +41,8 @@ pub enum Error {
     Action(#[from] ActionError),
     #[error("action error: {0}")]
     Token(#[from] TokenError),
+    #[error("oauth error: {0}")]
+    Oauth(#[from] OauthError),
     #[error("sso error: {0}")]
     Sso(#[from] SsoError),
     #[error("Http error: {0}")]
@@ -67,6 +70,11 @@ pub enum Error {
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
+        if let Error::Oauth(e) = self {
+            let res = e.error_response();
+            return res.into_response();
+        }
+
         let res = match self {
             Error::Auth(e) => e.error_response(),
             Error::Query(e) => e.error_response(),

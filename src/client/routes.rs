@@ -14,5 +14,5 @@ pub fn routes() -> axum::Router<AppState> {
                 .patch(handler::update)
                 .delete(handler::delete),
         )
-        .route("/:id/token", post(handler::create_token))
+        .route("/:id/credentials", post(handler::create_credentials))
 }

@@ -72,6 +72,10 @@ impl Password {
         }
     }
 
+    pub fn hash(&self, password: impl AsRef<[u8]>) -> Result<String> {
+        self.hasher.hash_password(password)
+    }
+
     pub async fn validate_and_hash<P: AsRef<str>>(&self, password: P) -> Result<String> {
         self.validate_password(password.as_ref())?;
 

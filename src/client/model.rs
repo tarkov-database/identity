@@ -11,7 +11,6 @@ use mongodb::{
     options::{FindOneAndUpdateOptions, FindOptions, ReturnDocument},
 };
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,7 +22,7 @@ pub struct ClientDocument {
     pub name: String,
     pub scope: Vec<String>,
     pub locked: bool,
-    pub token: Option<TokenDocument>,
+    pub oauth: Option<OauthDocument>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub last_modified: DateTime<Utc>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
@@ -32,8 +31,9 @@ pub struct ClientDocument {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TokenDocument {
-    pub id: bson::Uuid,
+pub struct OauthDocument {
+    pub id: String,
+    pub secret: String,
     #[serde(default, with = "chrono_datetime_as_bson_datetime")]
     pub last_seen: DateTime<Utc>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
@@ -42,14 +42,9 @@ pub struct TokenDocument {
     pub issued: DateTime<Utc>,
 }
 
-impl TokenDocument {
-    pub fn new(expires: DateTime<Utc>) -> Self {
-        Self {
-            id: Uuid::new_v4().into(),
-            last_seen: Default::default(),
-            expires,
-            issued: Utc::now(),
-        }
+impl OauthDocument {
+    pub fn is_expired(&self) -> bool {
+        self.expires < Utc::now()
     }
 }
 
@@ -95,6 +90,18 @@ impl Collection<ClientDocument> {
         Ok(items)
     }
 
+    pub async fn get_by_user_and_name(
+        &self,
+        user_id: ObjectId,
+        name: &str,
+    ) -> Result<Option<ClientDocument>> {
+        let filter = doc! { "user": user_id, "name": name };
+
+        let item = self.get_one(filter, None).await?;
+
+        Ok(item)
+    }
+
     pub async fn get_by_service(&self, service_id: ObjectId) -> Result<Vec<ClientDocument>> {
         let filter = doc! { "service": service_id };
         let sort = doc! { "created": 1 };
@@ -121,11 +128,8 @@ impl Collection<ClientDocument> {
         Ok(items)
     }
 
-    pub async fn get_by_token(
-        &self,
-        token_id: impl Into<bson::Uuid>,
-    ) -> Result<Option<ClientDocument>> {
-        let filter = doc! { "token.id": token_id.into() };
+    pub async fn get_by_oauth_id(&self, oauth_id: &str) -> Result<Option<ClientDocument>> {
+        let filter = doc! { "oauth.id": oauth_id };
 
         let item = self.get_one(filter, None).await?;
 
@@ -192,12 +196,12 @@ impl Collection<ClientDocument> {
         Ok(count)
     }
 
-    pub async fn set_token(&self, client_id: ObjectId, doc: TokenDocument) -> Result<()> {
+    pub async fn set_oauth(&self, client_id: ObjectId, doc: OauthDocument) -> Result<()> {
         let filter = doc! { "_id": client_id };
 
         let doc = doc! {
             "$currentDate": { "lastModified": true },
-            "$set": { "token": bson::to_bson(&doc).unwrap() },
+            "$set": { "oauth": bson::to_bson(&doc).unwrap() },
         };
 
         self.update_one(filter, doc, None)
@@ -207,12 +211,12 @@ impl Collection<ClientDocument> {
         Ok(())
     }
 
-    pub async fn set_token_as_seen(&self, client_id: ObjectId) -> Result<()> {
-        let filter = doc! { "_id": client_id };
+    pub async fn set_oauth_as_seen(&self, oauth_id: &str) -> Result<()> {
+        let filter = doc! { "oauth.id": oauth_id };
 
         let doc = doc! {
             "$currentDate": { "lastModified": true },
-            "$currentDate": { "token.lastSeen": true },
+            "$currentDate": { "oauth.lastSeen": true },
         };
 
         self.update_one(filter, doc, None)

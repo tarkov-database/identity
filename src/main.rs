@@ -9,6 +9,7 @@ mod extract;
 mod http;
 mod mail;
 mod model;
+mod oauth;
 mod service;
 mod session;
 mod sso;
@@ -85,6 +86,7 @@ async fn main() -> Result<()> {
         .nest("/session", session::routes())
         .nest("/service", service::routes())
         .nest("/token", token::routes())
+        .nest("/oauth", oauth::routes())
         .nest("/sso", sso::routes())
         .nest("/action", action::routes())
         .with_state(state);
