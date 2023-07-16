@@ -3,7 +3,7 @@ use crate::{
         password::Password,
         token::{sign::TokenSigner, TokenError},
     },
-    database::{Collection, Database},
+    database::Collection,
     error::Error,
     extract::{Json, TokenData},
     model::Response,
@@ -17,7 +17,7 @@ use crate::{
 use axum::extract::State;
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -29,11 +29,20 @@ pub struct SessionResponse {
     pub expires_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRequest {
     email: String,
     password: String,
+}
+
+impl std::fmt::Debug for CreateRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateRequest")
+            .field("email", &self.email)
+            .field("password", &"********")
+            .finish()
+    }
 }
 
 pub async fn create(

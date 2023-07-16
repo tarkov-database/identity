@@ -1,6 +1,6 @@
 use crate::{
     auth::{password::Password, AuthenticationError},
-    crypto,
+    crypto::{self, Secret},
     database::Collection,
     error::QueryError,
     extract::{Json, Query, TokenData},
@@ -16,7 +16,6 @@ use super::{
 };
 
 use axum::extract::{Path, State};
-use base64ct::{Base64UrlUnpadded, Encoding};
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
@@ -242,13 +241,23 @@ pub struct CredentialsRequest {
     validity: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialsResponse {
     client_id: String,
-    secret: String,
+    secret: Secret<CLIENT_SECRET_LENGTH>,
     #[serde(with = "ts_seconds")]
     expires: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for CredentialsResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialsResponse")
+            .field("client_id", &self.client_id)
+            .field("secret", &"********")
+            .field("expires", &self.expires)
+            .finish()
+    }
 }
 
 pub async fn create_credentials(
@@ -279,7 +288,7 @@ pub async fn create_credentials(
     let expires = Utc::now() + validity;
 
     let client_id = crypto::gen::generate_id::<CLIENT_ID_LENGTH>();
-    let client_secret = crypto::gen::generate_secret::<CLIENT_SECRET_LENGTH>();
+    let client_secret = crypto::gen::generate_secret();
 
     let doc = OauthDocument {
         id: client_id.clone(),
@@ -293,7 +302,7 @@ pub async fn create_credentials(
 
     let response = CredentialsResponse {
         client_id,
-        secret: Base64UrlUnpadded::encode_string(&client_secret),
+        secret: client_secret.into(),
         expires,
     };
 

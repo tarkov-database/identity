@@ -1,6 +1,7 @@
 use crate::{
     auth::{password::Password, token::sign::TokenSigner},
     client::model::ClientDocument,
+    crypto::Secret,
     database::Collection,
     extract::Json,
     model::Response,
@@ -11,17 +12,26 @@ use crate::{
 use super::{OauthError, CLIENT_SECRET_LENGTH};
 
 use axum::extract::State;
-use base64ct::{Base64UrlUnpadded, Encoding};
 use chrono::Duration;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct TokenRequest {
     client_id: String,
-    client_secret: String,
+    client_secret: Secret<CLIENT_SECRET_LENGTH>,
     grant_type: GrantType,
+}
+
+impl std::fmt::Debug for TokenRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenRequest")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"********")
+            .field("grant_type", &self.grant_type)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,13 +85,10 @@ pub async fn create_token(
 
     let client_oauth = client.oauth.as_ref().unwrap();
 
-    let mut secret = [0u8; CLIENT_SECRET_LENGTH];
-    Base64UrlUnpadded::decode(body.client_secret, &mut secret)
-        .map_err(|_| OauthError::InvalidClient)?;
     let secret_hash = client_oauth.secret.as_str();
 
     password
-        .verify(secret, secret_hash)
+        .verify(body.client_secret, secret_hash)
         .map_err(|_| OauthError::InvalidClient)?;
 
     if client.locked {
