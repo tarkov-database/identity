@@ -1,6 +1,7 @@
 pub mod aead;
-pub mod certificate;
+pub mod cert;
 pub mod gen;
+pub mod hash;
 
 use base64ct::{Base64UrlUnpadded, Encoding};
 

@@ -1,14 +1,14 @@
 use crate::{
     auth::{
-        password::{Hasher, Hibp, Password},
+        password::{hibp::HibpClient, Password},
         token::{sign::TokenSigner, verify::TokenVerifier},
     },
     config::{AppConfig, GlobalConfig},
-    crypto::certificate::CertificateStore,
+    crypto::{cert::CertificateStore, hash::PasswordHasher},
     database::Database,
     http::HttpClient,
     mail::Client as MailClient,
-    sso::GitHub,
+    services::sso::GitHub,
     utils,
 };
 
@@ -63,9 +63,9 @@ impl AppState {
 
         let http_client = HttpClient::default();
 
-        let hibp_client = Hibp::with_client(http_client.clone());
+        let hibp_client = HibpClient::with_client(http_client.clone());
 
-        let password = Password::new(Hasher::default(), hibp_client, config.hibp_check);
+        let password = Password::new(PasswordHasher::default(), hibp_client, config.hibp_check);
 
         let mail_client = MailClient::new(
             config.mg_key,

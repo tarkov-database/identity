@@ -1,9 +1,9 @@
 pub mod sign;
 pub mod verify;
 
-use std::str::FromStr;
+use crate::{services::error::ErrorResponse, services::model::Status};
 
-use crate::{error, model::Status};
+use std::str::FromStr;
 
 use base64ct::{Base64, Encoding};
 use chrono::{DateTime, Utc};
@@ -43,14 +43,14 @@ impl From<JwtError> for TokenError {
             ErrorKind::ExpiredSignature => Self::Expired,
             ErrorKind::ImmatureSignature => Self::Immature,
             _ => {
-                error!(error =? error, "jsonwebtoken error");
+                error!(error = %error, "jsonwebtoken error");
                 Self::Invalid
             }
         }
     }
 }
 
-impl error::ErrorResponse for TokenError {
+impl ErrorResponse for TokenError {
     type Response = Status;
 
     fn status_code(&self) -> StatusCode {
@@ -74,6 +74,12 @@ impl error::ErrorResponse for TokenError {
         };
 
         Status::new(self.status_code(), msg)
+    }
+}
+
+impl axum::response::IntoResponse for TokenError {
+    fn into_response(self) -> axum::response::Response {
+        self.error_response().into_response()
     }
 }
 

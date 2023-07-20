@@ -15,6 +15,9 @@ jemalloc = ["jemallocator"]
 [dependencies]
 jemallocator = { version = "0.5", optional = true }
 tokio = { version = "1", features = ["full"] }
+futures = { version = "0.3", default-features = false, features = [
+  "async-await",
+] }
 hyper = { version = "0.14", features = ["http1", "server", "runtime"] }
 tower = { version = "0.4", features = [
   "util",
@@ -47,35 +50,39 @@ url = { version = "2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
-mongodb = { version = "2.4", default-features = false, features = [
+mongodb = { version = "2.6", default-features = false, features = [
   "tokio-runtime",
   "bson-chrono-0_4",
   "bson-uuid-1",
   "tracing-unstable",
 ] }
-futures = { version = "0.3", default-features = false, features = [
-  "async-await",
-] }
-argon2 = { version = "0.5", features = ["std"] }
-aes-gcm-siv = "0.11"
-rand = { version = "0.8", features = ["std"] }
-sha-1 = "0.10"
-base64ct = { version = "1", features = ["std"] }
-base16ct = { version = "0.2", features = ["std"] }
-pki-rs = { git = "https://github.com/morphy2k/pki-rs", tag = "v0.1.0-alpha.1", features = [
-  "ed25519",
-  "fingerprint",
-], default-features = false }
-jsonwebtoken = { version = "8.3", default-features = false }
-passwords = "3"
 envy = "0.4"
 dotenv = "0.15"
 tracing = "0.1"
 tracing-futures = { version = "0.2", features = ["futures-03"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "1"
-rustls-pemfile = "1"
 uuid = { version = "1", features = ["serde", "v4", "fast-rng"] }
+
+# Crypto
+password-hash = "0.5"
+argon2 = { version = "0.5", features = ["std"] }
+rand = { version = "0.8", features = ["std"] }
+sha-1 = "0.10"
+base64ct = { version = "1", features = ["std"] }
+base16ct = { version = "0.2", features = ["std"] }
+aes-gcm-siv = { version = "0.11", features = [
+  "aes",
+  "std",
+  # "arrayvec",
+], default-features = false }
+pki-rs = { git = "https://github.com/morphy2k/pki-rs", tag = "v0.1.0-alpha.1", features = [
+  "ed25519",
+  "fingerprint",
+], default-features = false }
+jsonwebtoken = { version = "8.3", default-features = false }
+passwords = { version = "3", default-features = false }
+rustls-pemfile = "1"
 
 [profile.release]
 lto = true

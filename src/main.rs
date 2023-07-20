@@ -1,33 +1,23 @@
-mod action;
 mod auth;
-mod client;
 mod config;
 mod crypto;
 mod database;
 mod error;
-mod extract;
 mod http;
 mod mail;
-mod model;
-mod oauth;
-mod service;
-mod session;
-mod sso;
+mod services;
 mod state;
-mod token;
-mod user;
 mod utils;
 
 use crate::{
     config::{AppConfig, GlobalConfig},
-    error::handle_error,
     state::AppState,
 };
 
 use std::{iter::once, net::SocketAddr, time::Duration};
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
-use hyper::header::AUTHORIZATION;
+use hyper::header::{AUTHORIZATION, COOKIE};
 use tower::ServiceBuilder;
 use tower_http::{
     sensitive_headers::SetSensitiveHeadersLayer,
@@ -65,11 +55,11 @@ async fn main() -> Result<()> {
     let state = AppState::from_config(app_config).await?;
 
     let middleware = ServiceBuilder::new()
-        .layer(HandleErrorLayer::new(handle_error))
+        .layer(HandleErrorLayer::new(services::error::handle_error))
         .load_shed()
         .concurrency_limit(1024)
         .timeout(Duration::from_secs(60))
-        .layer(SetSensitiveHeadersLayer::new(once(AUTHORIZATION)))
+        .layer(SetSensitiveHeadersLayer::new([AUTHORIZATION, COOKIE]))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::new().include_headers(true))
@@ -80,16 +70,7 @@ async fn main() -> Result<()> {
                 ),
         );
 
-    let svc_routes: Router<()> = Router::new()
-        .nest("/user", user::routes())
-        .nest("/client", client::routes())
-        .nest("/session", session::routes())
-        .nest("/service", service::routes())
-        .nest("/token", token::routes())
-        .nest("/oauth", oauth::routes())
-        .nest("/sso", sso::routes())
-        .nest("/action", action::routes())
-        .with_state(state);
+    let svc_routes: Router<()> = services::routes(state);
 
     let routes = Router::new()
         .nest("/v1", svc_routes)

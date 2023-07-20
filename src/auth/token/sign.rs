@@ -1,4 +1,4 @@
-use crate::{crypto::certificate::CertificateStore, state::AppState, utils};
+use crate::{crypto::cert::CertificateStore, state::AppState, utils};
 
 use super::{Token, TokenError};
 

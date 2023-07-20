@@ -1,5 +1,3 @@
-use crate::Result;
-
 use aes_gcm_siv::{aead::Aead, Aes256GcmSiv, KeyInit, Nonce};
 use base64ct::{Base64, Encoding};
 use rand::{distributions::Alphanumeric, Rng};
@@ -13,21 +11,21 @@ pub enum AeadError {
 }
 
 #[derive(Clone)]
-pub struct Aead256 {
+pub struct AesGcmSiv {
     cipher: Aes256GcmSiv,
 }
 
-impl Aead256 {
+impl AesGcmSiv {
     const KEY_SIZE: usize = 256 / 8;
     const NONCE_SIZE: usize = 96 / 8;
 
-    pub fn new_from_b64<S: AsRef<str>>(key: S) -> Result<Self> {
+    pub fn new_from_b64<S: AsRef<str>>(key: S) -> Result<Self, AeadError> {
         let key = Base64::decode_vec(key.as_ref()).map_err(AeadError::from)?;
 
         Self::new(&key)
     }
 
-    pub fn new(key: &[u8]) -> Result<Self> {
+    pub fn new(key: &[u8]) -> Result<Self, AeadError> {
         let cipher = Aes256GcmSiv::new_from_slice(key).map_err(|_| AeadError::InvalidKeySize)?;
 
         Ok(Self { cipher })
@@ -74,7 +72,7 @@ impl Aead256 {
         self.cipher.decrypt(nonce, &nc[Self::NONCE_SIZE..]).unwrap()
     }
 
-    pub fn decrypt_b64<S>(&self, input: S) -> Result<Vec<u8>>
+    pub fn decrypt_b64<S>(&self, input: S) -> Result<Vec<u8>, AeadError>
     where
         S: AsRef<str>,
     {
@@ -93,7 +91,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt() {
-        let aead = Aead256::new_from_b64(AEAD_KEY).unwrap();
+        let aead = AesGcmSiv::new_from_b64(AEAD_KEY).unwrap();
 
         let input = "foo bar";
 
