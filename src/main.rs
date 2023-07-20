@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-use std::{iter::once, net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::{AUTHORIZATION, COOKIE};

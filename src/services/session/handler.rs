@@ -75,7 +75,7 @@ pub async fn create(
     }
 
     if password.verify(&body.password, &password_hash).is_err() {
-        return Err(SessionError::BadCredentials.into());
+        return Err(SessionError::BadCredentials)?;
     }
 
     let session = SessionDocument::new();

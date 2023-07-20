@@ -1,7 +1,7 @@
 pub mod password;
 pub mod token;
 
-use crate::{error, services::error::ErrorResponse, services::model::Status};
+use crate::{services::error::ErrorResponse, services::model::Status};
 
 use hyper::StatusCode;
 

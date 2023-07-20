@@ -1,7 +1,6 @@
 use crate::{
     database::{Collection, DatabaseModel},
     services::ServiceResult,
-    Result,
 };
 
 use super::ClientError;

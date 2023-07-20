@@ -83,7 +83,7 @@ impl Password {
         hibp_check: bool,
     ) -> Self {
         Self {
-            hasher: hasher.into(),
+            hasher,
             hibp,
             hibp_check,
         }

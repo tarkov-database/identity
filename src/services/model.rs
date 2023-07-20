@@ -128,13 +128,13 @@ pub struct ListOptions {
     pub sort: Option<Document>,
 }
 
-impl Into<FindOptions> for ListOptions {
-    fn into(self) -> FindOptions {
+impl From<ListOptions> for FindOptions {
+    fn from(opts: ListOptions) -> Self {
         FindOptions::builder()
-            .batch_size(self.limit as u32)
-            .skip(self.offset)
-            .limit(self.limit)
-            .sort(self.sort)
+            .batch_size(opts.limit as u32)
+            .skip(opts.offset)
+            .limit(opts.limit)
+            .sort(opts.sort)
             .build()
     }
 }

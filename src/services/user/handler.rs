@@ -94,9 +94,9 @@ pub struct Filter {
     role: Option<Role>,
 }
 
-impl Into<mongodb::bson::Document> for Filter {
-    fn into(self) -> mongodb::bson::Document {
-        to_document(&self).unwrap()
+impl From<Filter> for mongodb::bson::Document {
+    fn from(v: Filter) -> Self {
+        to_document(&v).unwrap()
     }
 }
 
@@ -125,7 +125,7 @@ pub async fn get_by_id(
     State(users): State<Collection<UserDocument>>,
 ) -> ServiceResult<Response<UserResponse>> {
     if !claims.scope.contains(&Scope::UserRead) && claims.sub != id {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     let user = users.get_by_id(id).await?;
@@ -152,7 +152,7 @@ pub async fn create(
     Json(body): Json<CreateRequest>,
 ) -> ServiceResult<Response<UserResponse>> {
     if !claims.scope.contains(&Scope::UserWrite) {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
@@ -201,7 +201,7 @@ pub async fn update(
     Json(body): Json<UpdateRequest>,
 ) -> ServiceResult<Response<UserResponse>> {
     if !claims.scope.contains(&Scope::UserWrite) && claims.sub != id {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     let mut doc = Document::new();
@@ -226,7 +226,7 @@ pub async fn update(
     }
 
     if doc.is_empty() {
-        return Err(QueryError::InvalidBody.into());
+        return Err(QueryError::InvalidBody)?;
     }
 
     let doc = users.update(id, doc).await?;
@@ -240,7 +240,7 @@ pub async fn delete(
     State(users): State<Collection<UserDocument>>,
 ) -> ServiceResult<Status> {
     if !claims.scope.contains(&Scope::UserWrite) {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     users.delete(id).await?;

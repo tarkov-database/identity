@@ -54,9 +54,9 @@ pub struct Filter {
     audience: Option<String>,
 }
 
-impl Into<bson::Document> for Filter {
-    fn into(self) -> bson::Document {
-        bson::to_document(&self).unwrap()
+impl From<Filter> for bson::Document {
+    fn from(v: Filter) -> Self {
+        bson::to_document(&v).unwrap()
     }
 }
 
@@ -67,7 +67,7 @@ pub async fn list(
     State(services): State<Collection<ServiceDocument>>,
 ) -> ServiceResult<Response<List<ServiceResponse>>> {
     if !claims.scope.contains(&Scope::ServiceRead) {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     let (services, total) = services
@@ -84,7 +84,7 @@ pub async fn get_by_id(
     State(services): State<Collection<ServiceDocument>>,
 ) -> ServiceResult<Response<ServiceResponse>> {
     if !claims.scope.contains(&Scope::ServiceRead) {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     let service = services.get_by_id(id).await?;
@@ -107,7 +107,7 @@ pub async fn create(
     Json(body): Json<CreateRequest>,
 ) -> ServiceResult<Response<ServiceResponse>> {
     if !claims.scope.contains(&Scope::ServiceWrite) {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     let service = ServiceDocument {
@@ -141,7 +141,7 @@ pub async fn update(
     Json(body): Json<UpdateRequest>,
 ) -> ServiceResult<Response<ServiceResponse>> {
     if !claims.scope.contains(&Scope::ServiceWrite) {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     let svc = services.get_by_id(id).await?;
@@ -149,14 +149,14 @@ pub async fn update(
     if let Some(ref def) = body.scope_default {
         if let Some(ref scope) = body.scope {
             if !def.iter().all(|s| scope.contains(s)) {
-                return Err(ServiceError::UndefinedScope.into());
+                return Err(ServiceError::UndefinedScope)?;
             }
         } else if !def.iter().all(|s| svc.scope.contains(s)) {
-            return Err(ServiceError::UndefinedScope.into());
+            return Err(ServiceError::UndefinedScope)?;
         }
     } else if let Some(ref scope) = body.scope {
         if svc.scope_default.iter().all(|s| scope.contains(s)) {
-            return Err(ServiceError::UndefinedScope.into());
+            return Err(ServiceError::UndefinedScope)?;
         }
     }
 
@@ -174,7 +174,7 @@ pub async fn update(
         doc.insert("scopeDefault", v);
     }
     if doc.is_empty() {
-        return Err(QueryError::InvalidBody.into());
+        return Err(QueryError::InvalidBody)?;
     }
 
     let doc = services.update(id, doc).await?;
@@ -188,7 +188,7 @@ pub async fn delete(
     State(services): State<Collection<ServiceDocument>>,
 ) -> ServiceResult<Status> {
     if !claims.scope.contains(&Scope::ServiceWrite) {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     services.delete(id).await?;

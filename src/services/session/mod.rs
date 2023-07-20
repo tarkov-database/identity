@@ -3,7 +3,6 @@ mod routes;
 
 use crate::{
     auth::token::{Token, TokenType, TokenValidation, LEEWAY},
-    error,
     services::model::Status,
 };
 

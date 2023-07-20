@@ -307,7 +307,7 @@ pub(super) async fn authorized(
     let state = cookies.get("state").ok_or(SsoError::StateMissing)?;
 
     if state != params.state {
-        return Err(SsoError::InvalidState.into());
+        return Err(SsoError::InvalidState)?;
     }
 
     let _claims = verifier
@@ -354,7 +354,7 @@ pub(super) async fn authorized(
             let domain = utils::get_email_domain(&email.address).ok_or(UserError::InvalidAddr)?;
 
             if !global.is_allowed_domain(domain) {
-                return Err(UserError::DomainNotAllowed.into());
+                return Err(UserError::DomainNotAllowed)?;
             }
 
             let doc = UserDocument {

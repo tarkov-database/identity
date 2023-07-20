@@ -2,7 +2,7 @@ mod handler;
 pub mod model;
 mod routes;
 
-use crate::{error, services::model::Status};
+use crate::services::model::Status;
 
 use http::StatusCode;
 

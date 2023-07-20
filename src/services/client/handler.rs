@@ -149,7 +149,7 @@ pub async fn create(
 ) -> ServiceResult<Response<ClientResponse>> {
     let user_id = if let Some(id) = body.user {
         if !claims.scope.contains(&Scope::ClientWrite) && claims.sub != id {
-            return Err(AuthError::InsufficientPermission.into());
+            return Err(AuthError::InsufficientPermission)?;
         }
         id
     } else {
@@ -193,7 +193,7 @@ pub async fn update(
     let mut doc = Document::new();
     if claims.scope.contains(&Scope::ClientWrite) {
         if let Some(v) = body.user {
-            doc.insert("user", id);
+            doc.insert("user", v);
         }
         if let Some(v) = body.locked {
             doc.insert("locked", v);
@@ -206,7 +206,7 @@ pub async fn update(
         doc.insert("scope", v);
     }
     if doc.is_empty() {
-        return Err(QueryError::InvalidBody.into());
+        return Err(QueryError::InvalidBody)?;
     }
 
     let user = if !claims.scope.contains(&Scope::ClientWrite) {
@@ -226,7 +226,7 @@ pub async fn delete(
     State(clients): State<Collection<ClientDocument>>,
 ) -> ServiceResult<Status> {
     if !claims.scope.contains(&Scope::ClientWrite) {
-        return Err(AuthError::InsufficientPermission.into());
+        return Err(AuthError::InsufficientPermission)?;
     }
 
     clients.delete(id).await?;

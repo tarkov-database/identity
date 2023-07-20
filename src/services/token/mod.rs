@@ -5,15 +5,10 @@ use std::iter;
 
 use crate::{
     auth::token::{Token, TokenType, TokenValidation, LEEWAY},
-    error,
-    services::model::Status,
     services::user,
 };
 
-use super::error::ErrorResponse;
-
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
-use hyper::StatusCode;
 use mongodb::bson::{oid::ObjectId, serde_helpers::serialize_object_id_as_hex_string};
 use serde::{Deserialize, Serialize};
 

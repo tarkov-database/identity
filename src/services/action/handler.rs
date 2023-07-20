@@ -40,7 +40,7 @@ pub async fn register(
     let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
 
     if !global.is_allowed_domain(domain) {
-        return Err(UserError::DomainNotAllowed.into());
+        return Err(UserError::DomainNotAllowed)?;
     }
 
     if users.get_by_email(&body.email).await.is_ok() {
@@ -80,10 +80,10 @@ pub async fn verify_email(
     let user = users.get_by_id(claims.sub).await?;
 
     if user.email != addr {
-        return Err(ActionError::InvalidToken.into());
+        return Err(ActionError::InvalidToken)?;
     }
     if user.verified {
-        return Err(ActionError::AlreadyVerified.into());
+        return Err(ActionError::AlreadyVerified)?;
     }
 
     users.update(claims.sub, doc! { "verified": true }).await?;
@@ -105,7 +105,7 @@ pub async fn request_reset(
     let user = users.get_by_email(&opts.email).await?;
 
     if !user.verified {
-        return Err(ActionError::NotVerified.into());
+        return Err(ActionError::NotVerified)?;
     }
 
     send_reset_mail(user.email, user.id, mail, signer).await?;
