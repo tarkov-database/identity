@@ -14,11 +14,12 @@ use axum::extract::State;
 use chrono::Duration;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct TokenRequest {
-    client_id: String,
+    client_id: Uuid,
     client_secret: Secret<CLIENT_SECRET_LENGTH>,
     grant_type: GrantType,
 }
@@ -78,7 +79,7 @@ pub async fn create_token(
     }
 
     let client = clients
-        .get_by_oauth_id(&body.client_id)
+        .get_by_oauth_id(body.client_id)
         .await?
         .ok_or(OauthError::InvalidClient)?;
 
@@ -97,7 +98,7 @@ pub async fn create_token(
         return Err(OauthError::InvalidClient)?;
     }
 
-    clients.set_oauth_as_seen(&body.client_id).await?;
+    clients.set_oauth_as_seen(body.client_id).await?;
 
     let service = services
         .get_by_id(client.service)

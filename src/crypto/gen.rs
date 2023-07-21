@@ -1,17 +1,16 @@
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 
-/// Generates a hard to guess random hex-encoded ID of length `LEN`.
 #[inline]
-pub fn generate_id<const LEN: usize>() -> String {
+pub fn random_bytes<const LEN: usize>() -> [u8; LEN] {
     let mut rng = rand::thread_rng();
 
     let mut bytes = [0u8; LEN];
     rng.fill_bytes(&mut bytes);
 
-    base16ct::lower::encode_string(bytes.as_ref())
+    bytes
 }
 
-/// Generates a random secret of length `LEN`.
+/// Generates a random secret of length `LEN` with fresh entropy.
 #[inline]
 pub fn generate_secret<const LEN: usize>() -> [u8; LEN] {
     let mut rng = StdRng::from_entropy();

@@ -8,9 +8,6 @@ use serde::Serialize;
 
 pub use routes::routes;
 
-/// Bytes length of client id.
-pub const CLIENT_ID_LENGTH: usize = 16;
-
 /// Bytes length of client secret.
 pub const CLIENT_SECRET_LENGTH: usize = 32;
 

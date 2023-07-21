@@ -19,7 +19,7 @@ impl std::error::Error for InvalidSize {}
 pub struct Secret<const SIZE: usize>([u8; SIZE]);
 
 impl<const SIZE: usize> Secret<SIZE> {
-    pub fn as_bytes(&self) -> &[u8] {
+    pub const fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 }

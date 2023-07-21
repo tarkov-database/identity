@@ -8,7 +8,7 @@ use crate::{
         extract::{Json, Query, TokenData},
     },
     services::{
-        oauth::{CLIENT_ID_LENGTH, CLIENT_SECRET_LENGTH},
+        oauth::CLIENT_SECRET_LENGTH,
         service::model::ServiceDocument,
         token::{AccessClaims, Scope},
         ServiceResult,
@@ -25,6 +25,7 @@ use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId, to_document, Document};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,7 +62,7 @@ impl From<ClientDocument> for ClientResponse {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OauthResponse {
-    pub id: String,
+    pub id: Uuid,
     #[serde(with = "ts_seconds")]
     pub last_seen: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
@@ -73,7 +74,7 @@ pub struct OauthResponse {
 impl From<OauthDocument> for OauthResponse {
     fn from(doc: OauthDocument) -> Self {
         Self {
-            id: doc.id,
+            id: doc.id.into(),
             last_seen: doc.last_seen,
             expires: doc.expires,
             issued: doc.issued,
@@ -249,7 +250,7 @@ pub struct CredentialsRequest {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialsResponse {
-    client_id: String,
+    client_id: Uuid,
     secret: Secret<CLIENT_SECRET_LENGTH>,
     #[serde(with = "ts_seconds")]
     expires: DateTime<Utc>,
@@ -292,11 +293,11 @@ pub async fn create_credentials(
 
     let expires = Utc::now() + validity;
 
-    let client_id = crypto::gen::generate_id::<CLIENT_ID_LENGTH>();
+    let client_id = uuid::Builder::from_random_bytes(crypto::gen::random_bytes()).into_uuid();
     let client_secret = crypto::gen::generate_secret();
 
     let doc = OauthDocument {
-        id: client_id.clone(),
+        id: client_id.into(),
         secret: password.hash(client_secret)?,
         last_seen: Default::default(),
         expires,

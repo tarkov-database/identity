@@ -32,7 +32,7 @@ pub struct ClientDocument {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OauthDocument {
-    pub id: String,
+    pub id: bson::Uuid,
     pub secret: String,
     #[serde(default, with = "chrono_datetime_as_bson_datetime")]
     pub last_seen: DateTime<Utc>,
@@ -128,8 +128,11 @@ impl Collection<ClientDocument> {
         Ok(items)
     }
 
-    pub async fn get_by_oauth_id(&self, oauth_id: &str) -> ServiceResult<Option<ClientDocument>> {
-        let filter = doc! { "oauth.id": oauth_id };
+    pub async fn get_by_oauth_id(
+        &self,
+        oauth_id: impl Into<bson::Uuid>,
+    ) -> ServiceResult<Option<ClientDocument>> {
+        let filter = doc! { "oauth.id": oauth_id.into() };
 
         let item = self.get_one(filter, None).await?;
 
@@ -211,8 +214,8 @@ impl Collection<ClientDocument> {
         Ok(())
     }
 
-    pub async fn set_oauth_as_seen(&self, oauth_id: &str) -> ServiceResult<()> {
-        let filter = doc! { "oauth.id": oauth_id };
+    pub async fn set_oauth_as_seen(&self, oauth_id: impl Into<bson::Uuid>) -> ServiceResult<()> {
+        let filter = doc! { "oauth.id": oauth_id.into() };
 
         let doc = doc! {
             "$currentDate": { "lastModified": true },
