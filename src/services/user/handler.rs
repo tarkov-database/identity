@@ -21,14 +21,18 @@ use super::{
 use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
-use mongodb::bson::{doc, oid::ObjectId, to_bson, to_document, Document};
+use mongodb::bson::{
+    doc, oid::ObjectId, serde_helpers::serialize_object_id_as_hex_string, to_bson, to_document,
+    Document,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserResponse {
-    pub id: String,
+    #[serde(serialize_with = "serialize_object_id_as_hex_string")]
+    pub id: ObjectId,
     pub email: EmailAddr,
     pub roles: Vec<Role>,
     pub verified: bool,
@@ -45,7 +49,7 @@ pub struct UserResponse {
 impl From<UserDocument> for UserResponse {
     fn from(doc: UserDocument) -> Self {
         Self {
-            id: doc.id.to_hex(),
+            id: doc.id,
             email: doc.email,
             verified: doc.verified,
             can_login: doc.can_login,

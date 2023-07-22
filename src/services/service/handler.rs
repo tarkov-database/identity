@@ -17,13 +17,16 @@ use super::{model::ServiceDocument, ServiceError};
 use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
-use mongodb::bson::{self, doc, oid::ObjectId, Document};
+use mongodb::bson::{
+    self, doc, oid::ObjectId, serde_helpers::serialize_object_id_as_hex_string, Document,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceResponse {
-    pub id: String,
+    #[serde(serialize_with = "serialize_object_id_as_hex_string")]
+    pub id: ObjectId,
     pub name: String,
     pub audience: Vec<String>,
     pub scope: Vec<String>,
@@ -35,7 +38,7 @@ pub struct ServiceResponse {
 impl From<ServiceDocument> for ServiceResponse {
     fn from(doc: ServiceDocument) -> Self {
         Self {
-            id: doc.id.to_hex(),
+            id: doc.id,
             name: doc.name,
             audience: doc.audience,
             scope: doc.scope,
