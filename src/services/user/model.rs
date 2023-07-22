@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     database::{Collection, DatabaseModel},
-    services::ServiceResult,
+    services::{model::EmailAddr, ServiceResult},
 };
 
 use super::UserError;
@@ -31,7 +31,7 @@ pub enum Role {
 pub struct UserDocument {
     #[serde(rename = "_id")]
     pub id: ObjectId,
-    pub email: String,
+    pub email: EmailAddr,
     pub password: Option<String>,
     pub roles: Vec<Role>,
     pub verified: bool,
@@ -48,24 +48,6 @@ pub struct UserDocument {
 impl UserDocument {
     pub fn find_session(&self, id: &bson::Uuid) -> Option<&SessionDocument> {
         self.sessions.iter().find(|s| &s.id == id)
-    }
-}
-
-impl Default for UserDocument {
-    fn default() -> Self {
-        Self {
-            id: Default::default(),
-            email: Default::default(),
-            password: Default::default(),
-            roles: Default::default(),
-            verified: false,
-            can_login: false,
-            locked: false,
-            connections: Default::default(),
-            sessions: Default::default(),
-            last_modified: Utc::now(),
-            created: Utc::now(),
-        }
     }
 }
 
@@ -139,8 +121,8 @@ impl Collection<UserDocument> {
         Ok(item)
     }
 
-    pub async fn get_by_email(&self, email: &str) -> ServiceResult<UserDocument> {
-        let filter = doc! { "email": email };
+    pub async fn get_by_email(&self, addr: impl AsRef<str>) -> ServiceResult<UserDocument> {
+        let filter = doc! { "email": addr.as_ref() };
 
         let item = self
             .get_one(filter, None)

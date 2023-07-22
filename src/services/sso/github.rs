@@ -3,7 +3,6 @@ use crate::{
     config::GlobalConfig,
     database::Collection,
     http::HttpClient,
-    services::extract::Query,
     services::{
         error::ErrorResponse,
         model::{Response, Status},
@@ -14,8 +13,8 @@ use crate::{
         },
         ServiceResult,
     },
+    services::{extract::Query, model::EmailAddr},
     state::AppState,
-    utils,
 };
 
 use super::{oauth::StateClaims, SsoError};
@@ -25,13 +24,14 @@ use axum::{
     response::{IntoResponse, Redirect},
 };
 
+use chrono::Utc;
 use headers::{Cookie, HeaderMap, HeaderValue};
 use http::{
     header::{ACCEPT, AUTHORIZATION, SET_COOKIE},
     StatusCode,
 };
 use hyper::Uri;
-use mongodb::bson::doc;
+use mongodb::bson::{doc, oid::ObjectId};
 use reqwest::IntoUrl;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
@@ -248,7 +248,7 @@ struct User {
 #[derive(Debug, Deserialize)]
 struct Email {
     #[serde(rename = "email")]
-    address: String,
+    address: EmailAddr,
     verified: bool,
     primary: bool,
     visibility: Option<String>,
@@ -351,18 +351,22 @@ pub(super) async fn authorized(
             }
         }
         None => {
-            let domain = utils::get_email_domain(&email.address).ok_or(UserError::InvalidAddr)?;
-
-            if !global.is_allowed_domain(domain) {
+            if !global.is_allowed_domain(email.address.domain()) {
                 return Err(UserError::DomainNotAllowed)?;
             }
 
             let doc = UserDocument {
+                id: ObjectId::new(),
                 email: email.address,
-                connections: vec![connection],
+                password: None,
                 can_login: true,
                 verified: true,
-                ..Default::default()
+                locked: false,
+                roles: Default::default(),
+                sessions: Default::default(),
+                connections: vec![connection],
+                last_modified: Utc::now(),
+                created: Utc::now(),
             };
 
             users.insert(&doc).await?;

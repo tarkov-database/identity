@@ -3,7 +3,7 @@ use crate::{
     database::Collection,
     mail,
     services::extract::{Json, Query, TokenData},
-    services::model::Status,
+    services::model::{EmailAddr, Status},
     services::{
         user::{
             model::{Role, UserDocument},
@@ -11,7 +11,7 @@ use crate::{
         },
         ServiceResult,
     },
-    utils, GlobalConfig,
+    GlobalConfig,
 };
 
 use super::{send_reset_mail, send_verification_mail, ActionClaims, ActionError, Reset, Verify};
@@ -25,7 +25,7 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterRequest {
-    email: String,
+    email: EmailAddr,
     password: String,
 }
 
@@ -37,9 +37,7 @@ pub async fn register(
     State(signer): State<TokenSigner>,
     Json(body): Json<RegisterRequest>,
 ) -> ServiceResult<Status> {
-    let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
-
-    if !global.is_allowed_domain(domain) {
+    if !global.is_allowed_domain(body.email.domain()) {
         return Err(UserError::DomainNotAllowed)?;
     }
 
@@ -60,8 +58,13 @@ pub async fn register(
         email: body.email,
         password: Some(password_hash),
         roles,
+        can_login: false,
+        verified: false,
+        locked: false,
+        connections: Default::default(),
+        sessions: Default::default(),
         last_modified: Utc::now(),
-        ..Default::default()
+        created: Utc::now(),
     };
 
     users.insert(&user).await?;
@@ -93,7 +96,7 @@ pub async fn verify_email(
 
 #[derive(Debug, Deserialize)]
 pub struct ResetOptions {
-    email: String,
+    email: EmailAddr,
 }
 
 pub async fn request_reset(

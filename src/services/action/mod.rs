@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 pub use routes::routes;
 
-use super::{error::ErrorResponse, ServiceResult};
+use super::{error::ErrorResponse, model::EmailAddr, ServiceResult};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ActionError {
@@ -78,7 +78,7 @@ pub struct ActionClaims<T> {
     #[serde(serialize_with = "serialize_object_id_as_hex_string")]
     pub sub: ObjectId,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
+    pub email: Option<EmailAddr>,
 
     #[serde(skip)]
     marker: PhantomData<T>,
@@ -100,7 +100,7 @@ impl<T: ActionType> Default for ActionClaims<T> {
 }
 
 impl ActionClaims<Verify> {
-    pub fn new_verify(user_id: ObjectId, email: String) -> Self {
+    pub fn new_verify(user_id: ObjectId, email: EmailAddr) -> Self {
         Self {
             sub: user_id,
             email: Some(email),
@@ -147,7 +147,7 @@ impl<T: ActionType> TokenValidation for ActionClaims<T> {
 }
 
 pub async fn send_verification_mail(
-    addr: String,
+    addr: EmailAddr,
     user_id: ObjectId,
     client: mail::Client,
     signer: TokenSigner,
@@ -162,14 +162,14 @@ pub async fn send_verification_mail(
     vars.insert("token".to_string(), token);
 
     client
-        .send_template(&addr, SUBJECT, TEMPLATE_NAME, vars)
+        .send_template(addr.as_ref(), SUBJECT, TEMPLATE_NAME, vars)
         .await?;
 
     Ok(())
 }
 
 async fn send_reset_mail(
-    addr: String,
+    addr: EmailAddr,
     user_id: ObjectId,
     client: mail::Client,
     signer: TokenSigner,
@@ -184,7 +184,7 @@ async fn send_reset_mail(
     vars.insert("token".to_string(), token);
 
     client
-        .send_template(&addr, SUBJECT, TEMPLATE_NAME, vars)
+        .send_template(addr.as_ref(), SUBJECT, TEMPLATE_NAME, vars)
         .await?;
 
     Ok(())

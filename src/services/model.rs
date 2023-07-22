@@ -1,7 +1,12 @@
 use axum::http::header::{HeaderName, HeaderValue};
 use hyper::StatusCode;
-use mongodb::{bson::Document, options::FindOptions};
+use mongodb::{
+    bson::{Bson, Document},
+    options::FindOptions,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::utils;
 
 #[derive(Debug)]
 pub struct Response<T>
@@ -186,4 +191,91 @@ where
     S: Serializer,
 {
     s.serialize_u16(x.as_u16())
+}
+
+#[derive(Debug)]
+pub struct InvalidEmailAddr;
+
+impl std::fmt::Display for InvalidEmailAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid email address")
+    }
+}
+
+impl std::error::Error for InvalidEmailAddr {}
+
+#[derive(Debug, Clone)]
+pub struct EmailAddr(String);
+
+impl EmailAddr {
+    pub fn new(addr: impl Into<String>) -> Result<Self, InvalidEmailAddr> {
+        addr.into().try_into()
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn local(&self) -> &str {
+        self.0.split('@').next().unwrap()
+    }
+
+    pub fn domain(&self) -> &str {
+        self.0.split('@').last().unwrap()
+    }
+}
+
+impl TryFrom<String> for EmailAddr {
+    type Error = InvalidEmailAddr;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !utils::validation::is_valid_email(&value) {
+            return Err(InvalidEmailAddr);
+        }
+
+        Ok(Self(value))
+    }
+}
+
+impl std::fmt::Display for EmailAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl AsRef<str> for EmailAddr {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq for EmailAddr {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl Serialize for EmailAddr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for EmailAddr {
+    fn deserialize<D>(deserializer: D) -> Result<EmailAddr, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.try_into().map_err(serde::de::Error::custom)
+    }
+}
+
+impl From<EmailAddr> for Bson {
+    fn from(v: EmailAddr) -> Self {
+        Bson::String(v.0)
+    }
 }

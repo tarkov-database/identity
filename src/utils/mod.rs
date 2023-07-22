@@ -1,4 +1,5 @@
 pub mod pem;
+pub mod validation;
 
 use tokio::{
     signal::unix::{signal, SignalKind},
@@ -23,8 +24,4 @@ pub fn shutdown_signal(rx_count: usize) -> Sender<()> {
     });
 
     tx2
-}
-
-pub fn get_email_domain(addr: &str) -> Option<&str> {
-    addr.splitn(2, '@').last()
 }

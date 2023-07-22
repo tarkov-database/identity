@@ -6,11 +6,11 @@ use crate::{
         action::send_verification_mail,
         error::QueryError,
         extract::{Json, Query, TokenData},
-        model::{List, ListOptions, Response, Status},
+        model::{EmailAddr, List, ListOptions, Response, Status},
         token::{AccessClaims, Scope},
         ServiceResult,
     },
-    utils, GlobalConfig,
+    GlobalConfig,
 };
 
 use super::{
@@ -29,7 +29,7 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct UserResponse {
     pub id: String,
-    pub email: String,
+    pub email: EmailAddr,
     pub roles: Vec<Role>,
     pub verified: bool,
     pub can_login: bool,
@@ -87,7 +87,7 @@ impl From<SessionDocument> for SessionResponse {
 #[serde(rename_all = "camelCase")]
 pub struct Filter {
     #[serde(skip_serializing_if = "Option::is_none")]
-    email: Option<String>,
+    email: Option<EmailAddr>,
     #[serde(skip_serializing_if = "Option::is_none")]
     verified: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,7 +109,7 @@ pub async fn list(
     let filter = if !claims.scope.contains(&Scope::UserRead) {
         doc! { "_id": claims.sub }
     } else {
-        to_document(&filter).unwrap()
+        filter.into()
     };
 
     let (users, total) = users.get_all(filter, Some(opts.into())).await?;
@@ -136,7 +136,7 @@ pub async fn get_by_id(
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRequest {
-    email: String,
+    email: EmailAddr,
     password: String,
     #[serde(default)]
     roles: Vec<Role>,
@@ -155,9 +155,7 @@ pub async fn create(
         return Err(AuthError::InsufficientPermission)?;
     }
 
-    let domain = utils::get_email_domain(&body.email).ok_or(UserError::InvalidAddr)?;
-
-    if !global.is_allowed_domain(domain) {
+    if !global.is_allowed_domain(body.email.domain()) {
         return Err(UserError::DomainNotAllowed)?;
     }
 
@@ -172,7 +170,13 @@ pub async fn create(
         email: body.email,
         password: Some(password_hash),
         roles: body.roles,
-        ..Default::default()
+        can_login: false,
+        verified: false,
+        locked: false,
+        connections: Default::default(),
+        sessions: Default::default(),
+        last_modified: Utc::now(),
+        created: Utc::now(),
     };
 
     users.insert(&user).await?;
@@ -185,7 +189,7 @@ pub async fn create(
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRequest {
-    email: Option<String>,
+    email: Option<EmailAddr>,
     password: Option<String>,
     verified: Option<bool>,
     roles: Option<Vec<Role>>,
@@ -211,8 +215,7 @@ pub async fn update(
         doc.insert("email", v);
     }
     if let Some(v) = body.password {
-        let hash = password.validate_and_hash(&v).await?;
-
+        let hash = password.validate_and_hash(v).await?;
         doc.insert("password", hash);
     }
 
