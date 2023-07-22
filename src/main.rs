@@ -14,7 +14,11 @@ use crate::{
     state::AppState,
 };
 
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    io::{stdout, IsTerminal},
+    net::SocketAddr,
+    time::Duration,
+};
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
 use hyper::header::{AUTHORIZATION, COOKIE};
@@ -32,15 +36,58 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
+enum LogFormat {
+    Json,
+    Pretty,
+    Compact,
+    Full,
+}
+
+impl LogFormat {
+    fn from_env() -> Self {
+        match std::env::var("LOG_FORMAT").as_deref() {
+            Ok("json") => Self::Json,
+            Ok("pretty") => Self::Pretty,
+            Ok("compact") => Self::Compact,
+            Ok("full") => Self::Full,
+            _ => Self::Full,
+        }
+    }
+}
+
+fn init_tracing() {
+    let subscriber = tracing_subscriber::registry().with(
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "RUST_LOG=info".into()),
+    );
+
+    match LogFormat::from_env() {
+        LogFormat::Json => {
+            let fmt_layer = tracing_subscriber::fmt::layer().json();
+            subscriber.with(fmt_layer).init();
+        }
+        LogFormat::Pretty => {
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .pretty()
+                .with_ansi(stdout().is_terminal());
+            subscriber.with(fmt_layer).init();
+        }
+        LogFormat::Compact => {
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_ansi(stdout().is_terminal());
+            subscriber.with(fmt_layer).init();
+        }
+        LogFormat::Full => {
+            let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(stdout().is_terminal());
+            subscriber.with(fmt_layer).init();
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "RUST_LOG=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer().pretty())
-        .init();
+    init_tracing();
 
     let prefix = envy::prefixed("IDENTITY_");
 
