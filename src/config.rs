@@ -21,13 +21,17 @@ const fn default_hibp_check() -> bool {
     true
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     // HTTP server
     #[serde(default = "default_addr")]
     pub server_addr: IpAddr,
     #[serde(default = "default_port")]
     pub server_port: u16,
+    #[serde(default)]
+    pub server_tls: bool,
+    pub server_tls_cert: Option<PathBuf>,
+    pub server_tls_key: Option<PathBuf>,
 
     // MongoDB client
     pub mongo_uri: String,

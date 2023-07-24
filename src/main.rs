@@ -15,13 +15,20 @@ use crate::{
 };
 
 use std::{
+    fs::read,
     io::{stdout, IsTerminal},
     net::SocketAddr,
+    sync::Arc,
     time::Duration,
 };
 
 use axum::{error_handling::HandleErrorLayer, Router, Server};
-use hyper::header::{AUTHORIZATION, COOKIE};
+use error::Error;
+use hyper::{
+    header::{AUTHORIZATION, COOKIE},
+    server::conn::AddrIncoming,
+};
+use hyper_rustls::server::{acceptor::TlsAcceptor, config::TlsConfigBuilder};
 use tower::ServiceBuilder;
 use tower_http::{
     sensitive_headers::SetSensitiveHeadersLayer,
@@ -34,7 +41,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-pub type Result<T> = std::result::Result<T, error::Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 enum LogFormat {
     Json,
@@ -97,9 +104,7 @@ async fn main() -> Result<()> {
         prefix.from_env()?
     };
 
-    let server_addr = SocketAddr::from((app_config.server_addr, app_config.server_port));
-
-    let state = AppState::from_config(app_config).await?;
+    let state = AppState::from_config(app_config.clone()).await?;
 
     let middleware = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(services::error::handle_error))
@@ -123,22 +128,52 @@ async fn main() -> Result<()> {
         .nest("/v1", svc_routes)
         .layer(middleware.into_inner());
 
-    let server = Server::bind(&server_addr)
-        .serve(routes.into_make_service_with_connect_info::<SocketAddr>());
+    let server_addr = SocketAddr::from((app_config.server_addr, app_config.server_port));
+    let incoming = AddrIncoming::bind(&server_addr)?;
 
     let signal_tx = utils::shutdown_signal(1);
     let mut signal_rx = signal_tx.subscribe();
-    let server = server.with_graceful_shutdown(async move {
+    let graceful_shutdown = async move {
         signal_rx.recv().await.ok();
-    });
+    };
 
-    tracing::debug!(
-        ipAddress =? server_addr.ip(),
-        port =? server_addr.port(),
-        "HTTP(S) server started"
-    );
+    if app_config.server_tls {
+        let cert = app_config
+            .server_tls_cert
+            .ok_or(Error::MissingConfigVariable("IDENTITY_SERVER_TLS_CERT"))?;
+        let key = app_config
+            .server_tls_key
+            .ok_or(Error::MissingConfigVariable("IDENTITY_SERVER_TLS_KEY"))?;
 
-    server.await?;
+        let config = TlsConfigBuilder::default()
+            .cert_key(&read(cert)?, &read(key)?)
+            .alpn_protocols(["h2", "http/1.1", "http/1.0"])
+            .build()?;
+        let incoming = TlsAcceptor::new(Arc::new(config), incoming);
+        let server = Server::builder(incoming)
+            .serve(routes.into_make_service())
+            .with_graceful_shutdown(graceful_shutdown);
+
+        tracing::info!(
+            ipAddress = %server_addr.ip(),
+            port = %server_addr.port(),
+            "HTTPS server started"
+        );
+
+        server.await?;
+    } else {
+        let server = Server::builder(incoming)
+            .serve(routes.into_make_service())
+            .with_graceful_shutdown(graceful_shutdown);
+
+        tracing::info!(
+            ipAddress = %server_addr.ip(),
+            port = %server_addr.port(),
+            "HTTP server started"
+        );
+
+        server.await?;
+    }
 
     Ok(())
 }

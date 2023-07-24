@@ -6,7 +6,7 @@ use axum::extract::FromRef;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Region {
     US,
@@ -53,25 +53,20 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new<K, D, F>(
-        api_key: K,
+    pub fn new(
+        api_key: String,
         region: Region,
-        domain: D,
-        from: F,
+        domain: String,
+        from: String,
         client: HttpClient,
-    ) -> Result<Self>
-    where
-        K: AsRef<str>,
-        D: AsRef<str>,
-        F: AsRef<str>,
-    {
+    ) -> Result<Self> {
         let base = region.base_url().join("v3/").unwrap();
 
         Ok(Self {
-            from: from.as_ref().to_string(),
+            from,
             base,
-            api_key: api_key.as_ref().to_string(),
-            domain: domain.as_ref().to_string(),
+            api_key,
+            domain,
             client,
         })
     }
