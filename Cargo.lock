@@ -958,6 +958,7 @@ dependencies = [
  "passwords",
  "pki-rs",
  "rand",
+ "rand_core",
  "regex",
  "reqwest",
  "rustls-pemfile",
@@ -973,6 +974,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

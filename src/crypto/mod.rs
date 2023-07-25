@@ -4,6 +4,9 @@ pub mod gen;
 pub mod hash;
 
 use base64ct::{Base64UrlUnpadded, Encoding};
+use rand::rngs::StdRng;
+use rand_core::{CryptoRngCore, SeedableRng};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 #[derive(Debug)]
 pub struct InvalidSize;
@@ -19,8 +22,24 @@ impl std::error::Error for InvalidSize {}
 pub struct Secret<const SIZE: usize>([u8; SIZE]);
 
 impl<const SIZE: usize> Secret<SIZE> {
+    pub fn new() -> Self {
+        let mut rng = StdRng::from_entropy();
+        Self::generate(&mut rng)
+    }
+
+    pub fn generate(mut rng: impl CryptoRngCore) -> Self {
+        let mut secret = [0u8; SIZE];
+        rng.fill_bytes(&mut secret);
+
+        Self(secret)
+    }
+
     pub const fn as_bytes(&self) -> &[u8] {
         &self.0
+    }
+
+    pub const fn len(&self) -> usize {
+        self.0.len()
     }
 }
 
@@ -29,8 +48,6 @@ impl<const SIZE: usize> Clone for Secret<SIZE> {
         Self(self.0)
     }
 }
-
-impl<const SIZE: usize> Copy for Secret<SIZE> {}
 
 impl<const SIZE: usize> From<[u8; SIZE]> for Secret<SIZE> {
     fn from(bytes: [u8; SIZE]) -> Self {
@@ -56,6 +73,20 @@ impl<const SIZE: usize> TryFrom<&[u8]> for Secret<SIZE> {
 impl<const SIZE: usize> AsRef<[u8]> for Secret<SIZE> {
     fn as_ref(&self) -> &[u8] {
         &self.0
+    }
+}
+
+impl<const SIZE: usize> Zeroize for Secret<SIZE> {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl<const SIZE: usize> ZeroizeOnDrop for Secret<SIZE> {}
+
+impl<const SIZE: usize> Drop for Secret<SIZE> {
+    fn drop(&mut self) {
+        self.zeroize();
     }
 }
 
@@ -117,8 +148,18 @@ impl<const SIZE: usize> serde::Serialize for Secret<SIZE> {
         S: serde::Serializer,
     {
         if serializer.is_human_readable() {
-            let str = Base64UrlUnpadded::encode_string(&self.0);
-            serializer.serialize_str(&str)
+            let len = match SIZE.checked_mul(4) {
+                Some(v) => (v / 3) + (v % 3 != 0) as usize,
+                None => return Err(serde::ser::Error::custom("invalid secret size")),
+            };
+
+            let mut buf = Zeroizing::new(vec![0u8; len]);
+
+            let str = Base64UrlUnpadded::encode(&self.0, &mut buf).map_err(|_| {
+                serde::ser::Error::custom("failed to serialize secret as base64url unpadded string")
+            })?;
+
+            serializer.serialize_str(str)
         } else {
             serializer.serialize_bytes(&self.0)
         }

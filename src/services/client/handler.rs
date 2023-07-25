@@ -299,11 +299,11 @@ pub async fn create_credentials(
     let expires = Utc::now() + validity;
 
     let client_id = uuid::Builder::from_random_bytes(crypto::gen::random_bytes()).into_uuid();
-    let client_secret = crypto::gen::generate_secret();
+    let client_secret = Secret::new();
 
     let doc = OauthDocument {
         id: client_id.into(),
-        secret: password.hash(client_secret)?,
+        secret: password.hash(&client_secret)?,
         last_seen: Default::default(),
         expires,
         issued: Utc::now(),
@@ -313,7 +313,7 @@ pub async fn create_credentials(
 
     let response = CredentialsResponse {
         client_id,
-        secret: client_secret.into(),
+        secret: client_secret,
         expires,
     };
 

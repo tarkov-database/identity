@@ -80,6 +80,7 @@ regex = "1"
 # Crypto
 password-hash = "0.5"
 argon2 = { version = "0.5", features = ["std"] }
+rand_core = { version = "0.6", features = ["std"] }
 rand = { version = "0.8", features = ["std"] }
 sha-1 = "0.10"
 base64ct = { version = "1", features = ["std"] }
@@ -89,6 +90,7 @@ aes-gcm-siv = { version = "0.11", features = [
   "std",
   # "arrayvec",
 ], default-features = false }
+zeroize = { version = "1.6", features = ["std"] }
 pki-rs = { git = "https://github.com/morphy2k/pki-rs", tag = "v0.1.0-alpha.1", features = [
   "ed25519",
   "fingerprint",
