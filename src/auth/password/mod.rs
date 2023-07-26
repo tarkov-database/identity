@@ -97,9 +97,9 @@ impl PasswordValidator {
                 "password must have at least 16 characters",
             ));
         }
-        if analysis.length() > 80 {
+        if analysis.length() > 32 {
             return Err(PasswordError::Invalid(
-                "password cannot exceed 80 characters",
+                "password cannot exceed 32 characters",
             ));
         }
         if analysis.uppercase_letters_count() < 1 {
@@ -112,14 +112,14 @@ impl PasswordValidator {
                 "password must have at least one lowercase character",
             ));
         }
-        if analysis.lowercase_letters_count() < 1 {
-            return Err(PasswordError::Invalid(
-                "password must have at least one lowercase character",
-            ));
-        }
         if analysis.numbers_count() < 1 {
             return Err(PasswordError::Invalid(
                 "password must have at least one digit",
+            ));
+        }
+        if analysis.symbols_count() < 1 {
+            return Err(PasswordError::Invalid(
+                "password must have at least one symbol",
             ));
         }
 
