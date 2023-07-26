@@ -1,5 +1,8 @@
 use crate::{
-    auth::{password::Password, AuthError},
+    auth::{
+        password::{PasswordError, PasswordHasher},
+        AuthError,
+    },
     crypto::{self},
     database::Collection,
     services::{
@@ -277,7 +280,7 @@ pub async fn create_credentials(
     Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(clients): State<Collection<ClientDocument>>,
-    State(password): State<Password>,
+    State(hasher): State<PasswordHasher>,
     Json(body): Json<CredentialsRequest>,
 ) -> ServiceResult<Response<CredentialsResponse>> {
     let client = if claims.scope.contains(&Scope::ClientWrite) {
@@ -305,7 +308,7 @@ pub async fn create_credentials(
 
     let doc = OauthDocument {
         id: client_id.into(),
-        secret: password.hash(&client_secret)?,
+        secret: hasher.hash(&client_secret).map_err(PasswordError::Hash)?,
         last_seen: Default::default(),
         expires,
         issued: Utc::now(),

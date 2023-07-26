@@ -1,5 +1,8 @@
 use crate::{
-    auth::{password::Password, token::sign::TokenSigner},
+    auth::{
+        password::{PasswordError, PasswordHasher, PasswordValidator},
+        token::sign::TokenSigner,
+    },
     crypto::Secret,
     database::Collection,
     mail,
@@ -42,7 +45,8 @@ impl std::fmt::Debug for RegisterRequest {
 pub async fn register(
     State(users): State<Collection<UserDocument>>,
     State(global): State<GlobalConfig>,
-    State(password): State<Password>,
+    State(validator): State<PasswordValidator>,
+    State(hasher): State<PasswordHasher>,
     State(mail): State<mail::Client>,
     State(signer): State<TokenSigner>,
     Json(body): Json<RegisterRequest>,
@@ -55,7 +59,8 @@ pub async fn register(
         return Err(UserError::AlreadyExists)?;
     }
 
-    let password_hash = password.validate_and_hash(&body.password).await?;
+    validator.validate(&body.password).await?;
+    let password_hash = hasher.hash(body.password).map_err(PasswordError::Hash)?;
 
     let roles = if global.is_editor_address(&body.email) {
         vec![Role::UserEditor]
@@ -134,10 +139,13 @@ pub struct ResetRequest {
 pub async fn reset_password(
     TokenData(claims): TokenData<ActionClaims<Reset>>,
     State(users): State<Collection<UserDocument>>,
-    State(password): State<Password>,
+    State(validator): State<PasswordValidator>,
+    State(hasher): State<PasswordHasher>,
     Json(body): Json<ResetRequest>,
 ) -> ServiceResult<Status> {
-    let password_hash = password.validate_and_hash(&body.password).await?;
+    validator.validate(&body.password).await?;
+
+    let password_hash = hasher.hash(body.password).map_err(PasswordError::Hash)?;
 
     users
         .update(claims.sub, doc! { "password": password_hash })

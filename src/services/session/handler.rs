@@ -1,6 +1,6 @@
 use crate::{
     auth::{
-        password::Password,
+        password::PasswordHasher,
         token::{sign::TokenSigner, TokenError},
     },
     crypto::Secret,
@@ -62,7 +62,7 @@ impl std::fmt::Debug for CreateRequest {
 pub async fn create(
     State(users): State<Collection<UserDocument>>,
     State(signer): State<TokenSigner>,
-    State(password): State<Password>,
+    State(hasher): State<PasswordHasher>,
     Json(body): Json<CreateRequest>,
 ) -> ServiceResult<Response<SessionResponse>> {
     let user = match users.get_by_email(&body.email).await {
@@ -85,7 +85,7 @@ pub async fn create(
         return Err(UserError::LoginNotAllowed)?;
     }
 
-    if password.verify(&body.password, &password_hash).is_err() {
+    if hasher.verify(body.password, password_hash).is_err() {
         return Err(SessionError::BadCredentials)?;
     }
 

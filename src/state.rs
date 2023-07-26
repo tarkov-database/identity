@@ -1,10 +1,10 @@
 use crate::{
     auth::{
-        password::{hibp::HibpClient, Password},
+        password::{hibp::HibpClient, PasswordHasher, PasswordValidator},
         token::{sign::TokenSigner, verify::TokenVerifier},
     },
     config::{AppConfig, GlobalConfig},
-    crypto::{cert::CertificateStore, hash::PasswordHasher},
+    crypto::cert::CertificateStore,
     database::Database,
     http::HttpClient,
     mail::Client as MailClient,
@@ -19,7 +19,8 @@ use tokio::fs;
 #[derive(Clone)]
 pub struct AppState {
     pub database: Database,
-    pub password: Password,
+    pub password_validator: PasswordValidator,
+    pub password_hasher: PasswordHasher,
     pub token_signer: TokenSigner,
     pub token_verifier: TokenVerifier,
     pub mail_client: MailClient,
@@ -65,7 +66,8 @@ impl AppState {
 
         let hibp_client = HibpClient::with_client(http_client.clone());
 
-        let password = Password::new(PasswordHasher::default(), hibp_client, config.hibp_check);
+        let password_validator = PasswordValidator::new(hibp_client, config.hibp_check);
+        let password_hasher = PasswordHasher::default();
 
         let mail_client = MailClient::new(
             config.mg_key,
@@ -90,7 +92,8 @@ impl AppState {
         Ok(Self {
             mail_client,
             database,
-            password,
+            password_validator,
+            password_hasher,
             token_signer,
             token_verifier,
             github_client: sso_github,

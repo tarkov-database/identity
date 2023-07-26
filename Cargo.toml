@@ -79,7 +79,7 @@ regex = "1"
 
 # Crypto
 password-hash = "0.5"
-argon2 = { version = "0.5", features = ["std"] }
+argon2 = { version = "0.5", features = ["std", "zeroize"] }
 rand_core = { version = "0.6", features = ["std"] }
 rand = { version = "0.8", features = ["std"] }
 sha-1 = "0.10"

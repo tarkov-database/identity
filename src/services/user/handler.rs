@@ -1,5 +1,9 @@
 use crate::{
-    auth::{password::Password, token::sign::TokenSigner, AuthError},
+    auth::{
+        password::{PasswordError, PasswordHasher, PasswordValidator},
+        token::sign::TokenSigner,
+        AuthError,
+    },
     crypto::Secret,
     database::Collection,
     mail,
@@ -157,10 +161,12 @@ impl std::fmt::Debug for CreateRequest {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(global): State<GlobalConfig>,
-    State(password): State<Password>,
+    State(validator): State<PasswordValidator>,
+    State(hasher): State<PasswordHasher>,
     State(mail): State<mail::Client>,
     State(signer): State<TokenSigner>,
     State(users): State<Collection<UserDocument>>,
@@ -178,7 +184,8 @@ pub async fn create(
         return Err(UserError::AlreadyExists)?;
     }
 
-    let password_hash = password.validate_and_hash(&body.password).await?;
+    validator.validate(&body.password).await?;
+    let password_hash = hasher.hash(body.password).map_err(PasswordError::Hash)?;
 
     let user = UserDocument {
         id: ObjectId::new(),
@@ -210,10 +217,12 @@ pub struct UpdateRequest {
     roles: Option<Vec<Role>>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update(
     Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
-    State(password): State<Password>,
+    State(validator): State<PasswordValidator>,
+    State(hasher): State<PasswordHasher>,
     State(mail): State<mail::Client>,
     State(signer): State<TokenSigner>,
     State(users): State<Collection<UserDocument>>,
@@ -230,7 +239,8 @@ pub async fn update(
         doc.insert("email", v);
     }
     if let Some(v) = body.password {
-        let hash = password.validate_and_hash(v).await?;
+        validator.validate(&v).await?;
+        let hash = hasher.hash(v).map_err(PasswordError::Hash)?;
         doc.insert("password", hash);
     }
 

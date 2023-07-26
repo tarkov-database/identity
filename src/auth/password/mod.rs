@@ -1,9 +1,6 @@
 pub mod hibp;
 
-use crate::{
-    crypto::hash::PasswordHasher, services::error::ErrorResponse, services::model::Status,
-    state::AppState,
-};
+use crate::{services::error::ErrorResponse, services::model::Status, state::AppState};
 
 use self::hibp::HibpClient;
 
@@ -28,7 +25,7 @@ pub enum PasswordError {
     BadScore,
 
     #[error("password has been compromised, {0} times")]
-    Pwned(u64),
+    Compromised(u64),
 
     #[error("password hasher error: {0}")]
     Hash(#[from] password_hash::Error),
@@ -43,7 +40,7 @@ impl ErrorResponse for PasswordError {
     fn status_code(&self) -> StatusCode {
         match self {
             PasswordError::Mismatch => StatusCode::UNAUTHORIZED,
-            PasswordError::Invalid(_) | PasswordError::BadScore | PasswordError::Pwned(_) => {
+            PasswordError::Invalid(_) | PasswordError::BadScore | PasswordError::Compromised(_) => {
                 StatusCode::BAD_REQUEST
             }
             PasswordError::Hash(_) | PasswordError::Hibp(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -69,65 +66,31 @@ impl axum::response::IntoResponse for PasswordError {
     }
 }
 
+pub type PasswordHasher = crate::crypto::hash::PasswordHasher<Argon2<'static>>;
+
+impl FromRef<AppState> for PasswordHasher {
+    fn from_ref(state: &AppState) -> Self {
+        state.password_hasher.clone()
+    }
+}
+
 #[derive(Clone)]
-pub struct Password {
-    hasher: PasswordHasher<Argon2<'static>>,
+pub struct PasswordValidator {
     hibp: HibpClient,
     hibp_check: bool,
 }
 
-impl Password {
-    pub fn new(
-        hasher: PasswordHasher<Argon2<'static>>,
-        hibp: HibpClient,
-        hibp_check: bool,
-    ) -> Self {
-        Self {
-            hasher,
-            hibp,
-            hibp_check,
-        }
+impl PasswordValidator {
+    pub fn new(hibp: HibpClient, hibp_check: bool) -> Self {
+        Self { hibp, hibp_check }
     }
 
-    pub fn hash(&self, password: impl AsRef<[u8]>) -> Result<String, PasswordError> {
-        let hash = self.hasher.hash(password)?;
-
-        Ok(hash)
-    }
-
-    pub async fn validate_and_hash(
-        &self,
-        password: impl AsRef<str>,
-    ) -> Result<String, PasswordError> {
-        self.validate(&password)?;
-
-        if self.hibp_check {
-            if let Some(count) = self.hibp.check_password(password.as_ref()).await? {
-                return Err(PasswordError::Pwned(count));
-            }
-        }
-
-        let hash = self.hasher.hash(password.as_ref())?;
-
-        Ok(hash)
-    }
-
-    pub fn verify(
-        &self,
-        password: impl AsRef<[u8]>,
-        hash: impl AsRef<str>,
-    ) -> Result<(), PasswordError> {
-        self.hasher.verify(password, hash)?;
-
-        Ok(())
-    }
-
-    fn validate(&self, password: impl AsRef<str>) -> Result<(), PasswordError> {
+    pub async fn validate(&self, password: impl AsRef<str>) -> Result<(), PasswordError> {
         if !password.as_ref().is_ascii() {
             return Err(PasswordError::Invalid("password has invalid characters"));
         }
 
-        let analysis = analyzer::analyze(password);
+        let analysis = analyzer::analyze(&password);
 
         if analysis.length() < 16 {
             return Err(PasswordError::Invalid(
@@ -164,12 +127,22 @@ impl Password {
             return Err(PasswordError::BadScore);
         }
 
+        if self.hibp_check {
+            if let Some(count) = self
+                .hibp
+                .check_password(password.as_ref().as_bytes())
+                .await?
+            {
+                return Err(PasswordError::Compromised(count));
+            }
+        }
+
         Ok(())
     }
 }
 
-impl FromRef<AppState> for Password {
+impl FromRef<AppState> for PasswordValidator {
     fn from_ref(state: &AppState) -> Self {
-        state.password.clone()
+        state.password_validator.clone()
     }
 }

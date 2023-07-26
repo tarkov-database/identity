@@ -3,7 +3,6 @@ use password_hash::{PasswordHash, PasswordVerifier, SaltString};
 use rand::rngs::OsRng;
 
 #[derive(Clone)]
-#[non_exhaustive]
 pub struct PasswordHasher<T> {
     context: T,
 }

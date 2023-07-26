@@ -1,5 +1,5 @@
 use crate::{
-    auth::{password::Password, token::sign::TokenSigner},
+    auth::{password::PasswordHasher, token::sign::TokenSigner},
     crypto::Secret,
     database::Collection,
     services::{
@@ -81,7 +81,7 @@ pub async fn create_token(
     State(services): State<Collection<ServiceDocument>>,
     State(clients): State<Collection<ClientDocument>>,
     State(signer): State<TokenSigner>,
-    State(password): State<Password>,
+    State(hasher): State<PasswordHasher>,
     Json(body): Json<TokenRequest>,
 ) -> crate::services::ServiceResult<Response<TokenResponse>> {
     if body.grant_type.is_unsupported() {
@@ -97,7 +97,7 @@ pub async fn create_token(
 
     let secret_hash = client_oauth.secret.as_str();
 
-    password
+    hasher
         .verify(body.client_secret, secret_hash)
         .map_err(|_| OauthError::InvalidClient)?;
 
