@@ -1,6 +1,7 @@
 use crate::{
     auth::token::{sign::TokenSigner, verify::TokenVerifier},
     config::GlobalConfig,
+    crypto::Secret,
     database::Collection,
     http::HttpClient,
     services::{
@@ -196,11 +197,21 @@ enum TokenType {
     Bearer,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct TokenResponse {
-    access_token: String,
+    access_token: Secret<String>,
     token_type: TokenType,
     scope: Option<String>,
+}
+
+impl std::fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("access_token", &"********")
+            .field("token_type", &self.token_type)
+            .field("scope", &self.scope)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -266,7 +277,7 @@ pub(super) async fn authorize(
         client_id = gh.client_id,
         redirect_uri = gh.redirect_uri,
         scope = ["read:user", "user:email"].join("%20"),
-        state = state,
+        state = state.as_str(),
     );
 
     let uri = Uri::builder()
@@ -279,7 +290,7 @@ pub(super) async fn authorize(
     let mut redirect = Redirect::to(&uri.to_string()).into_response();
     let cookie = format!(
         "state={}; Path=/v1/sso/github; Max-Age={}; SameSite=Lax; Secure; HttpOnly",
-        state,
+        state.as_str(),
         StateClaims::DEFAULT_EXP_MIN * 60,
     )
     .parse()
@@ -289,10 +300,16 @@ pub(super) async fn authorize(
     Ok(redirect)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct AuthorizedParams {
-    code: String,
-    state: String,
+    code: Secret<String>,
+    state: Secret<String>,
+}
+
+impl std::fmt::Debug for AuthorizedParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthorizedParams").finish_non_exhaustive()
+    }
 }
 
 pub(super) async fn authorized(
@@ -306,7 +323,7 @@ pub(super) async fn authorized(
 ) -> ServiceResult<Response<SessionResponse>> {
     let state = cookies.get("state").ok_or(SsoError::StateMissing)?;
 
-    if state != params.state {
+    if state != params.state.as_str() {
         return Err(SsoError::InvalidState)?;
     }
 
@@ -315,11 +332,11 @@ pub(super) async fn authorized(
         .await
         .map_err(|_| SsoError::InvalidState)?;
 
-    let TokenResponse { access_token, .. } = github.get_access_token(&params.code).await?;
+    let TokenResponse { access_token, .. } = github.get_access_token(params.code.as_ref()).await?;
 
     let (user, emails) = tokio::try_join!(
-        github.get_current_user(&access_token),
-        github.get_emails(&access_token)
+        github.get_current_user(access_token.as_ref()),
+        github.get_emails(access_token.as_ref()),
     )?;
 
     let email = emails

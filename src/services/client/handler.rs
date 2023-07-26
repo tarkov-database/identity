@@ -1,14 +1,16 @@
 use crate::{
     auth::{password::Password, AuthError},
-    crypto::{self, Secret},
+    crypto::{self},
     database::Collection,
-    services::model::{List, ListOptions, Response, Status},
     services::{
         error::QueryError,
         extract::{Json, Query, TokenData},
     },
     services::{
-        oauth::CLIENT_SECRET_LENGTH,
+        model::{List, ListOptions, Response, Status},
+        oauth::ClientSecret,
+    },
+    services::{
         service::model::ServiceDocument,
         token::{AccessClaims, Scope},
         ServiceResult,
@@ -256,7 +258,7 @@ pub struct CredentialsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CredentialsResponse {
     client_id: Uuid,
-    secret: Secret<CLIENT_SECRET_LENGTH>,
+    secret: ClientSecret,
     #[serde(with = "ts_seconds")]
     expires: DateTime<Utc>,
 }
@@ -299,7 +301,7 @@ pub async fn create_credentials(
     let expires = Utc::now() + validity;
 
     let client_id = uuid::Builder::from_random_bytes(crypto::gen::random_bytes()).into_uuid();
-    let client_secret = Secret::new();
+    let client_secret = ClientSecret::new();
 
     let doc = OauthDocument {
         id: client_id.into(),

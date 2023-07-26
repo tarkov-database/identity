@@ -1,5 +1,6 @@
 use crate::{
     auth::{password::Password, token::sign::TokenSigner},
+    crypto::Secret,
     database::Collection,
     mail,
     services::extract::{Json, Query, TokenData},
@@ -22,11 +23,20 @@ use hyper::StatusCode;
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::Deserialize;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterRequest {
     email: EmailAddr,
-    password: String,
+    password: Secret<String>,
+}
+
+impl std::fmt::Debug for RegisterRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RegisterRequest")
+            .field("email", &self.email)
+            .field("password", &"********")
+            .finish()
+    }
 }
 
 pub async fn register(
@@ -116,9 +126,9 @@ pub async fn request_reset(
     Ok(Status::new(StatusCode::OK, "reset email sent"))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct ResetRequest {
-    password: String,
+    password: Secret<String>,
 }
 
 pub async fn reset_password(

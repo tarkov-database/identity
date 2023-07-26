@@ -87,7 +87,7 @@ impl Client {
         addr: &str,
         sub: &str,
         tmpl: &str,
-        vars: HashMap<String, String>,
+        vars: HashMap<&str, &str>,
     ) -> Result<()> {
         let vars = serde_json::to_string(&vars).unwrap();
         let message = TemplateMessage {

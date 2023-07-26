@@ -1,5 +1,6 @@
 use crate::{
     auth::{password::Password, token::sign::TokenSigner, AuthError},
+    crypto::Secret,
     database::Collection,
     mail,
     services::{
@@ -137,13 +138,23 @@ pub async fn get_by_id(
     Ok(Response::new(user.into()))
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRequest {
     email: EmailAddr,
-    password: String,
+    password: Secret<String>,
     #[serde(default)]
     roles: Vec<Role>,
+}
+
+impl std::fmt::Debug for CreateRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateRequest")
+            .field("email", &self.email)
+            .field("password", &"********")
+            .field("roles", &self.roles)
+            .finish()
+    }
 }
 
 pub async fn create(

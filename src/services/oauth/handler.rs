@@ -8,7 +8,7 @@ use crate::{
     },
 };
 
-use super::{OauthError, CLIENT_SECRET_LENGTH};
+use super::{ClientSecret, OauthError};
 
 use axum::extract::State;
 use chrono::Duration;
@@ -20,7 +20,7 @@ use uuid::Uuid;
 #[serde(rename_all = "snake_case")]
 pub struct TokenRequest {
     client_id: Uuid,
-    client_secret: Secret<CLIENT_SECRET_LENGTH>,
+    client_secret: ClientSecret,
     grant_type: GrantType,
 }
 
@@ -53,12 +53,22 @@ impl GrantType {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct TokenResponse {
-    access_token: String,
+    access_token: Secret<String>,
     token_type: TokenType,
     expires_in: u64,
+}
+
+impl std::fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("access_token", &"********")
+            .field("token_type", &self.token_type)
+            .field("expires_in", &self.expires_in)
+            .finish()
+    }
 }
 
 #[derive(Debug, Serialize)]

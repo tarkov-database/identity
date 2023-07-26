@@ -1,6 +1,8 @@
 mod handler;
 mod routes;
 
+use crate::crypto::Secret;
+
 use super::model::Response;
 
 use http::StatusCode;
@@ -8,8 +10,7 @@ use serde::Serialize;
 
 pub use routes::routes;
 
-/// Bytes length of client secret.
-pub const CLIENT_SECRET_LENGTH: usize = 32;
+pub type ClientSecret = Secret<[u8; 32]>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OauthError {

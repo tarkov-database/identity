@@ -3,11 +3,12 @@ use crate::{
         password::Password,
         token::{sign::TokenSigner, TokenError},
     },
+    crypto::Secret,
     database::Collection,
     services::{
         error::Error,
         extract::{Json, TokenData},
-        model::Response,
+        model::{EmailAddr, Response},
         session::{SessionClaims, SessionError},
         user::{
             model::{SessionDocument, UserDocument},
@@ -23,20 +24,30 @@ use hyper::StatusCode;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionResponse {
     pub user_id: String,
-    pub token: String,
+    pub token: Secret<String>,
     #[serde(with = "ts_seconds")]
     pub expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for SessionResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionResponse")
+            .field("user_id", &self.user_id)
+            .field("token", &"********")
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRequest {
-    email: String,
-    password: String,
+    email: EmailAddr,
+    password: Secret<String>,
 }
 
 impl std::fmt::Debug for CreateRequest {

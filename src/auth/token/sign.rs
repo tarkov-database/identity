@@ -1,4 +1,8 @@
-use crate::{crypto::cert::CertificateStore, state::AppState, utils};
+use crate::{
+    crypto::{cert::CertificateStore, Secret},
+    state::AppState,
+    utils,
+};
 
 use super::{Token, TokenError};
 
@@ -25,7 +29,7 @@ impl TokenSigner {
         TokenSignerBuilder::default()
     }
 
-    pub async fn sign<T>(&self, claims: &T) -> Result<String, TokenError>
+    pub async fn sign<T>(&self, claims: &T) -> Result<Secret<String>, TokenError>
     where
         T: Token + Serialize,
     {
@@ -47,8 +51,9 @@ impl TokenSigner {
         header.x5c = Some(self.chain_base64.clone());
         header.x5t_s256 = Some(self.cert_fingerprint.clone());
 
-        let token =
-            jsonwebtoken::encode(&header, claims, &self.key).map_err(TokenError::Encoding)?;
+        let token = jsonwebtoken::encode(&header, claims, &self.key)
+            .map_err(TokenError::Encoding)?
+            .into();
 
         Ok(token)
     }

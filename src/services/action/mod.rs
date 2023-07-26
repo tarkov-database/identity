@@ -159,7 +159,7 @@ pub async fn send_verification_mail(
     const SUBJECT: &str = "Email verification required";
 
     let mut vars = HashMap::with_capacity(1);
-    vars.insert("token".to_string(), token);
+    vars.insert("token", token.as_str());
 
     client
         .send_template(addr.as_ref(), SUBJECT, TEMPLATE_NAME, vars)
@@ -181,7 +181,7 @@ async fn send_reset_mail(
     const SUBJECT: &str = "Password reset";
 
     let mut vars = HashMap::with_capacity(1);
-    vars.insert("token".to_string(), token);
+    vars.insert("token", token.as_str());
 
     client
         .send_template(addr.as_ref(), SUBJECT, TEMPLATE_NAME, vars)

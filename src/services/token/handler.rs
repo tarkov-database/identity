@@ -1,5 +1,6 @@
 use crate::{
     auth::token::{sign::TokenSigner, TokenError},
+    crypto::Secret,
     database::Database,
     services::{
         extract::TokenData,
@@ -17,12 +18,21 @@ use hyper::StatusCode;
 use mongodb::bson::doc;
 use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenResponse {
-    token: String,
+    token: Secret<String>,
     #[serde(with = "ts_seconds")]
     expires_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("token", &"********")
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 pub async fn get(
