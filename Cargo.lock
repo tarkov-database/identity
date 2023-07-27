@@ -882,12 +882,14 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
-version = "0.2.0-beta.1"
-source = "git+https://github.com/morphy2k/hyper-rustls.git?tag=v0.2.0-beta.1#6000899f3a985af815552193888181c75021a473"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d78e1e73ec14cf7375674f74d7dde185c8206fd9dea6fb6295e8a98098aaa97"
 dependencies = [
+ "futures-util",
+ "http",
  "hyper",
- "rustls-pemfile",
- "thiserror",
+ "rustls 0.21.5",
  "tokio",
  "tokio-rustls 0.24.1",
 ]
@@ -895,8 +897,7 @@ dependencies = [
 [[package]]
 name = "hyper-rustls"
 version = "0.24.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d78e1e73ec14cf7375674f74d7dde185c8206fd9dea6fb6295e8a98098aaa97"
+source = "git+https://github.com/morphy2k/hyper-rustls.git?rev=1f79baf#1f79baff1c6436b9ad9704f04ed46268fcc7d12f"
 dependencies = [
  "futures-util",
  "http",
@@ -951,7 +952,7 @@ dependencies = [
  "headers",
  "http",
  "hyper",
- "hyper-rustls 0.2.0-beta.1",
+ "hyper-rustls 0.24.1 (git+https://github.com/morphy2k/hyper-rustls.git?rev=1f79baf)",
  "jsonwebtoken",
  "mimalloc",
  "mongodb",
@@ -962,6 +963,7 @@ dependencies = [
  "rand_core",
  "regex",
  "reqwest",
+ "rustls 0.21.5",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -1635,7 +1637,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "hyper-rustls 0.24.1",
+ "hyper-rustls 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ipnet",
  "js-sys",
  "log",
@@ -1813,9 +1815,9 @@ checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "serde"
-version = "1.0.175"
+version = "1.0.176"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d25439cd7397d044e2748a6fe2432b5e85db703d6d097bd014b3c0ad1ebff0b"
+checksum = "76dc28c9523c5d70816e393136b86d48909cfb27cecaa902d338c19ed47164dc"
 dependencies = [
  "serde_derive",
 ]
@@ -1831,9 +1833,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.175"
+version = "1.0.176"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b23f7ade6f110613c0d63858ddb8b94c1041f550eab58a16b371bdf2c9c80ab4"
+checksum = "a4e7b8c5dc823e3b90651ff1d3808419cd14e5ad76de04feaf37da114e7a306f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1842,9 +1844,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.103"
+version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d03b412469450d4404fe8499a268edd7f8b79fecb074b0d812ad64ca21f4031b"
+checksum = "076066c5f1078eac5b722a31827a8832fe108bed65dfa75e233c89f8206e976c"
 dependencies = [
  "indexmap 2.0.0",
  "itoa",

@@ -18,7 +18,6 @@ use std::{
     fs::read,
     io::{stdout, IsTerminal},
     net::SocketAddr,
-    sync::Arc,
     time::Duration,
 };
 
@@ -28,7 +27,7 @@ use hyper::{
     header::{AUTHORIZATION, COOKIE},
     server::conn::AddrIncoming,
 };
-use hyper_rustls::server::{acceptor::TlsAcceptor, config::TlsConfigBuilder};
+use hyper_rustls::server::TlsAcceptor;
 use tower::ServiceBuilder;
 use tower_http::{
     sensitive_headers::SetSensitiveHeadersLayer,
@@ -138,18 +137,26 @@ async fn main() -> Result<()> {
     };
 
     if app_config.server_tls {
-        let cert = app_config
-            .server_tls_cert
-            .ok_or(Error::MissingConfigVariable("IDENTITY_SERVER_TLS_CERT"))?;
-        let key = app_config
-            .server_tls_key
-            .ok_or(Error::MissingConfigVariable("IDENTITY_SERVER_TLS_KEY"))?;
+        let certs = {
+            let path = app_config
+                .server_tls_cert
+                .ok_or(Error::MissingConfigVariable("IDENTITY_SERVER_TLS_CERT"))?;
+            utils::pem::read_certs(&read(path)?[..])?
+                .into_iter()
+                .map(rustls::Certificate)
+                .collect()
+        };
+        let key = {
+            let path = app_config
+                .server_tls_key
+                .ok_or(Error::MissingConfigVariable("IDENTITY_SERVER_TLS_KEY"))?;
+            utils::pem::read_key(&read(path)?[..]).map(rustls::PrivateKey)?
+        };
 
-        let config = TlsConfigBuilder::default()
-            .cert_key(&read(cert)?, &read(key)?)
-            .alpn_protocols(["h2", "http/1.1", "http/1.0"])
-            .build()?;
-        let incoming = TlsAcceptor::new(Arc::new(config), incoming);
+        let incoming = TlsAcceptor::builder()
+            .with_single_cert(certs, key)?
+            .with_all_versions_alpn()
+            .with_incoming(incoming);
         let server = Server::builder(incoming)
             .serve(routes.into_make_service())
             .with_graceful_shutdown(graceful_shutdown);

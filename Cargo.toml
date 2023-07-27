@@ -26,9 +26,12 @@ futures = { version = "0.3", default-features = false, features = [
   "async-await",
 ] }
 hyper = { version = "0.14", features = ["http1", "http2", "server", "runtime"] }
-hyper-rustls = { git = "https://github.com/morphy2k/hyper-rustls.git", tag = "v0.2.0-beta.1", features = [
+hyper-rustls = { git = "https://github.com/morphy2k/hyper-rustls.git", rev = "1f79baf", features = [
   "server",
+  "http1",
+  "http2",
 ], default-features = false }
+rustls = { version = "0.21", default-features = false }
 tower = { version = "0.4", features = [
   "util",
   "timeout",

@@ -3,8 +3,6 @@ use crate::{
     crypto::aead::AeadError,
 };
 
-use hyper_rustls::server::config::TlsConfigError;
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("crypto error: {0}")]
@@ -25,8 +23,8 @@ pub enum Error {
     #[error("token signer builder error: {0}")]
     TokenBuilder(#[from] token::sign::BuilderError),
 
-    #[error("tls config error: {0}")]
-    TlsConfig(#[from] TlsConfigError),
+    #[error("rustls error: {0}")]
+    TlsConfig(#[from] rustls::Error),
 
     #[error("missing config variable: {0}")]
     MissingConfigVariable(&'static str),
