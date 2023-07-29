@@ -7,11 +7,7 @@ use self::hibp::HibpClient;
 use argon2::Argon2;
 use axum::extract::FromRef;
 use http::StatusCode;
-use passwords::{analyzer, scorer};
 use tracing::error;
-
-/// Minimum password score
-const SCORE_MIN: f64 = 85.0;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PasswordError {
@@ -20,9 +16,6 @@ pub enum PasswordError {
 
     #[error("password is invalid: {0}")]
     Invalid(&'static str),
-
-    #[error("password is too weak")]
-    BadScore,
 
     #[error("password has been compromised, {0} times")]
     Compromised(u64),
@@ -40,9 +33,7 @@ impl ErrorResponse for PasswordError {
     fn status_code(&self) -> StatusCode {
         match self {
             PasswordError::Mismatch => StatusCode::UNAUTHORIZED,
-            PasswordError::Invalid(_) | PasswordError::BadScore | PasswordError::Compromised(_) => {
-                StatusCode::BAD_REQUEST
-            }
+            PasswordError::Invalid(_) | PasswordError::Compromised(_) => StatusCode::BAD_REQUEST,
             PasswordError::Hash(_) | PasswordError::Hibp(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -90,41 +81,49 @@ impl PasswordValidator {
             return Err(PasswordError::Invalid("password has invalid characters"));
         }
 
-        let analysis = analyzer::analyze(&password);
+        let length = password.as_ref().len();
 
-        if analysis.length() < 16 {
+        if length < 16 {
             return Err(PasswordError::Invalid(
-                "password must have at least 16 characters",
+                "password must be at least 16 characters",
             ));
         }
-        if analysis.length() > 32 {
+        if length > 32 {
             return Err(PasswordError::Invalid(
-                "password cannot exceed 32 characters",
-            ));
-        }
-        if analysis.uppercase_letters_count() < 1 {
-            return Err(PasswordError::Invalid(
-                "password must have at least one uppercase character",
-            ));
-        }
-        if analysis.lowercase_letters_count() < 1 {
-            return Err(PasswordError::Invalid(
-                "password must have at least one lowercase character",
-            ));
-        }
-        if analysis.numbers_count() < 1 {
-            return Err(PasswordError::Invalid(
-                "password must have at least one digit",
-            ));
-        }
-        if analysis.symbols_count() < 1 {
-            return Err(PasswordError::Invalid(
-                "password must have at least one symbol",
+                "password must be at most 32 characters",
             ));
         }
 
-        if scorer::score(&analysis) < SCORE_MIN {
-            return Err(PasswordError::BadScore);
+        let (lower, upper, digit, _symbol) =
+            password
+                .as_ref()
+                .chars()
+                .fold((0, 0, 0, 0), |(lower, upper, digit, symbol), c| {
+                    if c.is_ascii_lowercase() {
+                        (lower + 1, upper, digit, symbol)
+                    } else if c.is_ascii_uppercase() {
+                        (lower, upper + 1, digit, symbol)
+                    } else if c.is_ascii_digit() {
+                        (lower, upper, digit + 1, symbol)
+                    } else {
+                        (lower, upper, digit, symbol + 1)
+                    }
+                });
+
+        if lower < 1 {
+            return Err(PasswordError::Invalid(
+                "password must contain at least 1 lowercase character",
+            ));
+        }
+        if upper < 1 {
+            return Err(PasswordError::Invalid(
+                "password must contain at least 1 uppercase character",
+            ));
+        }
+        if digit < 1 {
+            return Err(PasswordError::Invalid(
+                "password must contain at least 1 digit",
+            ));
         }
 
         if self.hibp_check {

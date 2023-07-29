@@ -106,7 +106,6 @@ pki-rs = { git = "https://github.com/morphy2k/pki-rs", tag = "v0.1.0-alpha.1", f
   "fingerprint",
 ], default-features = false }
 jsonwebtoken = { version = "8.3", default-features = false }
-passwords = { version = "3", default-features = false }
 rustls-pemfile = "1"
 
 [profile.release]
