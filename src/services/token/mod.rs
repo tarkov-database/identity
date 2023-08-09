@@ -70,6 +70,10 @@ impl AccessClaims<Scope> {
         let scope = Scope::from_roles(roles);
         Self::with_scope(iter::once(Self::AUDIENCE), user_id, scope)
     }
+
+    pub fn contains_scopes<'a>(&self, scopes: impl IntoIterator<Item = &'a Scope>) -> bool {
+        scopes.into_iter().all(|s| self.scope.contains(s))
+    }
 }
 
 impl<S> Token for AccessClaims<S>

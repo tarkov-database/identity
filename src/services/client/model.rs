@@ -260,8 +260,15 @@ impl Collection<ClientDocument> {
         Ok(item)
     }
 
-    pub async fn delete(&self, id: ObjectId) -> ServiceResult<()> {
-        let filter = doc! { "_id": id };
+    pub async fn delete(
+        &self,
+        id: ObjectId,
+        user_id: impl Into<Option<ObjectId>>,
+    ) -> ServiceResult<()> {
+        let mut filter = doc! { "_id": id };
+        if let Some(user_id) = user_id.into() {
+            filter.insert("user", user_id);
+        }
 
         if !self.delete_one(filter, None).await? {
             return Err(ClientError::NotFound)?;

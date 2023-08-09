@@ -25,11 +25,13 @@ use super::{
     ClientError, CREDENTIALS_MAX_VALIDITY,
 };
 
+use std::iter::once;
+
 use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Duration, Utc};
 use hyper::StatusCode;
 use mongodb::bson::{
-    doc, oid::ObjectId, serde_helpers::serialize_object_id_as_hex_string, to_document, Document,
+    self, doc, oid::ObjectId, serde_helpers::serialize_object_id_as_hex_string, Document,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -98,9 +100,13 @@ pub struct Filter {
     #[serde(skip_serializing_if = "Option::is_none")]
     user: Option<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    approved: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     service: Option<ObjectId>,
+}
+
+impl From<&Filter> for bson::Document {
+    fn from(filter: &Filter) -> Self {
+        bson::to_document(filter).unwrap()
+    }
 }
 
 pub async fn list(
@@ -109,21 +115,16 @@ pub async fn list(
     Query(opts): Query<ListOptions>,
     State(clients): State<Collection<ClientDocument>>,
 ) -> ServiceResult<Response<List<ClientResponse>>> {
-    let user = if !claims.scope.contains(&Scope::ClientRead) {
-        Some(&claims.sub)
-    } else {
-        filter.user.as_ref()
+    if !claims.contains_scopes(once(&Scope::ClientRead)) {
+        return Err(AuthError::InsufficientPermission)?;
     };
 
-    let mut filter_doc = to_document(&filter).unwrap();
-    if let Some(id) = user {
-        filter_doc.insert("user", id);
-    }
-    if let Some(id) = filter.service {
-        filter_doc.insert("service", id);
+    let mut filter = bson::Document::from(&filter);
+    if !claims.contains_scopes(once(&Scope::UserRead)) {
+        filter.insert("user", claims.sub);
     }
 
-    let (clients, total) = clients.get_all(filter_doc, Some(opts.into())).await?;
+    let (clients, total) = clients.get_all(filter, Some(opts.into())).await?;
     let list = List::new(total, clients);
 
     Ok(Response::new(list))
@@ -134,10 +135,14 @@ pub async fn get_by_id(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(clients): State<Collection<ClientDocument>>,
 ) -> ServiceResult<Response<ClientResponse>> {
-    let client = if claims.scope.contains(&Scope::ClientRead) {
-        clients.get_by_id_and_user(id, claims.sub).await?
-    } else {
+    if !claims.contains_scopes(once(&Scope::ClientRead)) {
+        return Err(AuthError::InsufficientPermission)?;
+    };
+
+    let client = if claims.contains_scopes(once(&Scope::UserRead)) {
         clients.get_by_id(id).await?
+    } else {
+        clients.get_by_id_and_user(id, claims.sub).await?
     };
 
     Ok(Response::with_status(StatusCode::OK, client.into()))
@@ -158,11 +163,14 @@ pub async fn create(
     State(services): State<Collection<ServiceDocument>>,
     Json(body): Json<CreateRequest>,
 ) -> ServiceResult<Response<ClientResponse>> {
+    if !claims.contains_scopes([&Scope::ClientWrite, &Scope::ServiceRead]) {
+        return Err(AuthError::InsufficientPermission)?;
+    };
+
     let user_id = if let Some(id) = body.user {
-        if !claims.scope.contains(&Scope::ClientWrite) && claims.sub != id {
-            return Err(AuthError::InsufficientPermission)?;
-        }
-        id
+        (id == claims.sub || claims.contains_scopes(once(&Scope::UserWrite)))
+            .then_some(id)
+            .ok_or(AuthError::InsufficientPermission)?
     } else {
         claims.sub
     };
@@ -201,14 +209,22 @@ pub async fn update(
     State(clients): State<Collection<ClientDocument>>,
     Json(body): Json<UpdateRequest>,
 ) -> ServiceResult<Response<ClientResponse>> {
+    if !claims.contains_scopes(once(&Scope::ClientWrite)) {
+        return Err(AuthError::InsufficientPermission)?;
+    };
+
     let mut doc = Document::new();
-    if claims.scope.contains(&Scope::ClientWrite) {
-        if let Some(v) = body.user {
-            doc.insert("user", v);
+    if let Some(v) = body.user {
+        if !claims.contains_scopes(once(&Scope::UserWrite)) {
+            return Err(AuthError::InsufficientPermission)?;
         }
-        if let Some(v) = body.locked {
-            doc.insert("locked", v);
+        doc.insert("user", v);
+    }
+    if let Some(v) = body.locked {
+        if !claims.contains_scopes(once(&Scope::UserWrite)) {
+            return Err(AuthError::InsufficientPermission)?;
         }
+        doc.insert("locked", v);
     }
     if let Some(v) = body.name {
         doc.insert("name", v.as_str());
@@ -220,7 +236,7 @@ pub async fn update(
         return Err(QueryError::InvalidBody)?;
     }
 
-    let user = if !claims.scope.contains(&Scope::ClientWrite) {
+    let user = if !claims.contains_scopes(once(&Scope::UserWrite)) {
         Some(claims.sub)
     } else {
         None
@@ -236,11 +252,17 @@ pub async fn delete(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(clients): State<Collection<ClientDocument>>,
 ) -> ServiceResult<Status> {
-    if !claims.scope.contains(&Scope::ClientWrite) {
+    if !claims.contains_scopes(once(&Scope::ClientWrite)) {
         return Err(AuthError::InsufficientPermission)?;
     }
 
-    clients.delete(id).await?;
+    let user = if !claims.contains_scopes(once(&Scope::UserWrite)) {
+        Some(claims.sub)
+    } else {
+        None
+    };
+
+    clients.delete(id, user).await?;
 
     Ok(Status::new(StatusCode::OK, "client deleted"))
 }
@@ -283,11 +305,11 @@ pub async fn create_credentials(
     State(hasher): State<PasswordHasher>,
     Json(body): Json<CredentialsRequest>,
 ) -> ServiceResult<Response<CredentialsResponse>> {
-    let client = if claims.scope.contains(&Scope::ClientWrite) {
-        clients.get_by_id(id).await?
-    } else {
-        clients.get_by_id_and_user(id, claims.sub).await?
+    if !claims.contains_scopes(once(&Scope::ClientWrite)) {
+        return Err(AuthError::InsufficientPermission)?;
     };
+
+    let client = clients.get_by_id_and_user(id, claims.sub).await?;
 
     if client.locked {
         return Err(ClientError::Locked)?;

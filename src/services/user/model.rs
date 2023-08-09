@@ -20,8 +20,10 @@ use uuid::Uuid;
 pub enum Role {
     UserEditor,
     UserViewer,
+
     ClientEditor,
     ClientViewer,
+
     ServiceEditor,
     ServiceViewer,
 }
