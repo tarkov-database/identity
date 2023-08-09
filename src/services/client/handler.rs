@@ -21,7 +21,7 @@ use crate::{
 };
 
 use super::{
-    model::{ClientDocument, OauthDocument},
+    model::{ClientDocument, ClientName, OauthDocument},
     ClientError, CREDENTIALS_MAX_VALIDITY,
 };
 
@@ -43,7 +43,7 @@ pub struct ClientResponse {
     pub user: ObjectId,
     #[serde(serialize_with = "serialize_object_id_as_hex_string")]
     pub service: ObjectId,
-    pub name: String,
+    pub name: ClientName,
     pub scope: Vec<String>,
     pub locked: bool,
     pub oauth: Option<OauthResponse>,
@@ -147,7 +147,7 @@ pub async fn get_by_id(
 #[serde(rename_all = "camelCase")]
 pub struct CreateRequest {
     user: Option<ObjectId>,
-    name: String,
+    name: ClientName,
     service: ObjectId,
     scope: Option<Vec<String>>,
 }
@@ -190,7 +190,7 @@ pub async fn create(
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRequest {
     user: Option<ObjectId>,
-    name: Option<String>,
+    name: Option<ClientName>,
     scope: Option<Vec<String>>,
     locked: Option<bool>,
 }
@@ -211,7 +211,7 @@ pub async fn update(
         }
     }
     if let Some(v) = body.name {
-        doc.insert("name", v);
+        doc.insert("name", v.as_str());
     }
     if let Some(v) = body.scope {
         doc.insert("scope", v);

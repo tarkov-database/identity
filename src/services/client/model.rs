@@ -5,11 +5,14 @@ use crate::{
 
 use super::ClientError;
 
+use std::sync::OnceLock;
+
 use chrono::{DateTime, Utc};
 use mongodb::{
     bson::{self, doc, oid::ObjectId, serde_helpers::chrono_datetime_as_bson_datetime, Document},
     options::{FindOneAndUpdateOptions, FindOptions, ReturnDocument},
 };
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -19,7 +22,7 @@ pub struct ClientDocument {
     pub id: ObjectId,
     pub user: ObjectId,
     pub service: ObjectId,
-    pub name: String,
+    pub name: ClientName,
     pub scope: Vec<String>,
     pub locked: bool,
     pub oauth: Option<OauthDocument>,
@@ -27,6 +30,10 @@ pub struct ClientDocument {
     pub last_modified: DateTime<Utc>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created: DateTime<Utc>,
+}
+
+impl DatabaseModel for ClientDocument {
+    const COLLECTION_NAME: &'static str = "clients";
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -48,8 +55,88 @@ impl OauthDocument {
     }
 }
 
-impl DatabaseModel for ClientDocument {
-    const COLLECTION_NAME: &'static str = "clients";
+#[derive(Debug, Clone)]
+pub struct InvalidClientName;
+
+impl std::fmt::Display for InvalidClientName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid client name")
+    }
+}
+
+impl std::error::Error for InvalidClientName {}
+
+#[derive(Debug, Clone)]
+pub struct ClientName(String);
+
+impl ClientName {
+    pub fn new(name: impl Into<String>) -> Result<Self, InvalidClientName> {
+        name.into().try_into()
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for ClientName {
+    type Error = InvalidClientName;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() < 6 || value.len() > 32 {
+            return Err(InvalidClientName);
+        }
+
+        let re = {
+            static RE: OnceLock<Regex> = OnceLock::new();
+            RE.get_or_init(|| {
+                Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9\-_\#\*\+\(\)\\&\s]*[a-zA-Z0-9]$y").unwrap()
+            })
+        };
+
+        if !re.is_match(&value) {
+            return Err(InvalidClientName);
+        }
+
+        Ok(Self(value))
+    }
+}
+
+impl std::fmt::Display for ClientName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl AsRef<str> for ClientName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq for ClientName {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl Serialize for ClientName {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ClientName {
+    fn deserialize<D>(deserializer: D) -> Result<ClientName, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.try_into().map_err(serde::de::Error::custom)
+    }
 }
 
 impl Collection<ClientDocument> {
