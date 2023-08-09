@@ -77,11 +77,8 @@ impl PasswordValidator {
     }
 
     pub async fn validate(&self, password: impl AsRef<str>) -> Result<(), PasswordError> {
-        if !password.as_ref().is_ascii() {
-            return Err(PasswordError::Invalid("password has invalid characters"));
-        }
-
-        let length = password.as_ref().len();
+        let password = password.as_ref();
+        let length = password.len();
 
         if length < 16 {
             return Err(PasswordError::Invalid(
@@ -94,9 +91,12 @@ impl PasswordValidator {
             ));
         }
 
+        if !password.is_ascii() {
+            return Err(PasswordError::Invalid("password has invalid characters"));
+        }
+
         let (lower, upper, digit, _symbol) =
             password
-                .as_ref()
                 .chars()
                 .fold((0, 0, 0, 0), |(lower, upper, digit, symbol), c| {
                     if c.is_ascii_lowercase() {
@@ -127,11 +127,7 @@ impl PasswordValidator {
         }
 
         if self.hibp_check {
-            if let Some(count) = self
-                .hibp
-                .check_password(password.as_ref().as_bytes())
-                .await?
-            {
+            if let Some(count) = self.hibp.check_password(password).await? {
                 return Err(PasswordError::Compromised(count));
             }
         }
