@@ -1,9 +1,8 @@
+use std::str::FromStr;
+
 use axum::http::header::{HeaderName, HeaderValue};
 use hyper::StatusCode;
-use mongodb::{
-    bson::{Bson, Document},
-    options::FindOptions,
-};
+use mongodb::{bson::Bson, options::FindOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::utils;
@@ -123,6 +122,64 @@ impl<T: Serialize> List<T> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum SortOrder {
+    Ascending,
+    Descending,
+}
+
+#[derive(Debug, Clone)]
+pub struct Sort {
+    pub field: String,
+    pub order: SortOrder,
+}
+
+impl FromStr for Sort {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let sort = match s.strip_prefix('-') {
+            Some(v) if !v.is_empty() => Self {
+                field: v.to_string(),
+                order: SortOrder::Descending,
+            },
+            _ => {
+                if s.is_empty() {
+                    return Err(());
+                }
+
+                Self {
+                    field: s.to_string(),
+                    order: SortOrder::Ascending,
+                }
+            }
+        };
+
+        Ok(sort)
+    }
+}
+
+impl<'de> Deserialize<'de> for Sort {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(d)?;
+        Self::from_str(&s).map_err(|_| serde::de::Error::custom("invalid sort"))
+    }
+}
+
+impl From<Sort> for mongodb::bson::Document {
+    fn from(sort: Sort) -> Self {
+        let order = match sort.order {
+            SortOrder::Ascending => 1,
+            SortOrder::Descending => -1,
+        };
+
+        mongodb::bson::doc! { sort.field: order }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListOptions {
@@ -130,7 +187,7 @@ pub struct ListOptions {
     pub limit: i64,
     #[serde(default)]
     pub offset: u64,
-    pub sort: Option<Document>,
+    pub sort: Option<Sort>,
 }
 
 impl From<ListOptions> for FindOptions {
@@ -139,7 +196,7 @@ impl From<ListOptions> for FindOptions {
             .batch_size(opts.limit as u32)
             .skip(opts.offset)
             .limit(opts.limit)
-            .sort(opts.sort)
+            .sort(opts.sort.map(Into::into))
             .build()
     }
 }
