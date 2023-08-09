@@ -30,6 +30,7 @@ hyper-rustls = { git = "https://github.com/morphy2k/hyper-rustls.git", rev = "1f
   "server",
   "http1",
   "http2",
+  "tls12",
 ], default-features = false }
 rustls = { version = "0.21", default-features = false }
 tower = { version = "0.4", features = [
