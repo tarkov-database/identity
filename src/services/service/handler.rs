@@ -30,9 +30,11 @@ pub struct ServiceResponse {
     pub name: String,
     pub audience: Vec<String>,
     pub scope: Vec<String>,
-    pub default_scope: Vec<String>,
+    pub scope_default: Vec<String>,
     #[serde(with = "ts_seconds")]
     pub last_modified: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub created: DateTime<Utc>,
 }
 
 impl From<ServiceDocument> for ServiceResponse {
@@ -42,8 +44,9 @@ impl From<ServiceDocument> for ServiceResponse {
             name: doc.name,
             audience: doc.audience,
             scope: doc.scope,
-            default_scope: doc.scope_default,
+            scope_default: doc.scope_default,
             last_modified: doc.last_modified,
+            created: doc.created,
         }
     }
 }
