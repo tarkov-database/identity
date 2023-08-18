@@ -13,4 +13,5 @@ pub fn routes() -> axum::Router<AppState> {
             "/reset",
             get(handler::request_reset).post(handler::reset_password),
         )
+        .route("/change-email", post(handler::change_email))
 }

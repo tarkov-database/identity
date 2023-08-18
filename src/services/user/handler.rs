@@ -213,7 +213,6 @@ pub async fn create(
 pub struct UpdateRequest {
     email: Option<EmailAddr>,
     password: Option<String>,
-    verified: Option<bool>,
     roles: Option<Vec<Role>>,
 }
 
@@ -233,11 +232,6 @@ pub async fn update(
     }
 
     let mut doc = Document::new();
-    if let Some(v) = body.email {
-        send_verification_mail(v.clone(), id, mail, signer).await?;
-        doc.insert("verified", false);
-        doc.insert("email", v);
-    }
     if let Some(v) = body.password {
         validator.validate(&v).await?;
         let hash = hasher.hash(v).map_err(PasswordError::Hash)?;
@@ -245,8 +239,13 @@ pub async fn update(
     }
 
     if claims.scope.contains(&Scope::UserWrite) {
-        if let Some(v) = body.verified {
-            doc.insert("verified", v);
+        if let Some(v) = body.email {
+            if users.get_by_email(&v).await.is_ok() {
+                return Err(UserError::AlreadyExists)?;
+            }
+            send_verification_mail(v.clone(), id, mail, signer).await?;
+            doc.insert("email", v);
+            doc.insert("verified", false);
         }
         if let Some(v) = body.roles {
             doc.insert("roles", to_bson(&v).unwrap());

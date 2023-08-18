@@ -7,7 +7,10 @@ use crate::{
     database::Collection,
     mail,
     services::extract::{Json, Query, TokenData},
-    services::model::{EmailAddr, Status},
+    services::{
+        model::{EmailAddr, Status},
+        token::{AccessClaims, Scope},
+    },
     services::{
         user::{
             model::{Role, UserDocument},
@@ -89,6 +92,38 @@ pub async fn register(
     Ok(Status::new(StatusCode::CREATED, "user registered"))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ChangeEmailRequest {
+    email: EmailAddr,
+}
+
+pub async fn change_email(
+    TokenData(claims): TokenData<AccessClaims<Scope>>,
+    State(users): State<Collection<UserDocument>>,
+    State(global): State<GlobalConfig>,
+    State(mail): State<mail::Client>,
+    State(signer): State<TokenSigner>,
+    Json(body): Json<ChangeEmailRequest>,
+) -> ServiceResult<Status> {
+    if !global.is_allowed_domain(body.email.domain()) {
+        return Err(UserError::DomainNotAllowed)?;
+    }
+
+    let user = users.get_by_id(claims.sub).await?;
+
+    if user.email == body.email {
+        return Err(ActionError::AlreadySet)?;
+    }
+
+    if users.get_by_email(&body.email).await.is_ok() {
+        return Err(UserError::AlreadyExists)?;
+    }
+
+    send_verification_mail(body.email, user.id, mail, signer).await?;
+
+    Ok(Status::new(StatusCode::OK, "verification email sent"))
+}
+
 pub async fn verify_email(
     TokenData(claims): TokenData<ActionClaims<Verify>>,
     State(users): State<Collection<UserDocument>>,
@@ -97,16 +132,20 @@ pub async fn verify_email(
 
     let user = users.get_by_id(claims.sub).await?;
 
-    if user.email != addr {
-        return Err(ActionError::InvalidToken)?;
-    }
-    if user.verified {
-        return Err(ActionError::AlreadyVerified)?;
+    if user.email == addr {
+        if user.verified {
+            return Err(ActionError::AlreadyVerified)?;
+        } else {
+            users.update(claims.sub, doc! { "verified": true }).await?;
+        }
+    } else {
+        users
+            .update(claims.sub, doc! { "email": addr, "verified": true })
+            .await?;
+        // TODO: send email to old address
     }
 
-    users.update(claims.sub, doc! { "verified": true }).await?;
-
-    Ok(Status::new(StatusCode::OK, "account verified"))
+    Ok(Status::new(StatusCode::OK, "email address verified"))
 }
 
 #[derive(Debug, Deserialize)]

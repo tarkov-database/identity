@@ -26,6 +26,8 @@ pub enum ActionError {
     AlreadyVerified,
     #[error("user not verified")]
     NotVerified,
+    #[error("already set")]
+    AlreadySet,
 }
 
 impl ErrorResponse for ActionError {
@@ -33,7 +35,9 @@ impl ErrorResponse for ActionError {
 
     fn status_code(&self) -> StatusCode {
         match self {
-            ActionError::InvalidToken | ActionError::AlreadyVerified => StatusCode::BAD_REQUEST,
+            ActionError::InvalidToken | ActionError::AlreadyVerified | ActionError::AlreadySet => {
+                StatusCode::BAD_REQUEST
+            }
             ActionError::NotVerified => StatusCode::FORBIDDEN,
         }
     }
