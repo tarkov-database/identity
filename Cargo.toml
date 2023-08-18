@@ -1,5 +1,5 @@
 [package]
-name = "identity-server"
+name = "identity"
 version = "0.1.0-alpha.0"
 authors = ["Markus Wiegand <mail@morphy2k.dev>"]
 edition = "2021"
