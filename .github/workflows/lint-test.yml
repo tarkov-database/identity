@@ -1,0 +1,80 @@
+name: Lint & Test
+
+on:
+  push:
+    paths:
+      - '**.rs'
+      - '**/Cargo.lock'
+      - '**/Cargo.toml'
+      - '.github/workflows/lint-test.yaml'
+
+jobs:
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Check out
+      uses: actions/checkout@v3
+
+    - name: Setup Rust
+      run: |
+        rustup update stable
+        rustup default stable
+        rustup component add clippy rustfmt
+    - name: Get version
+      run: cargo --version --verbose
+
+    - name: Generate lockfile
+      run: cargo generate-lockfile --verbose
+
+    - uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo
+
+    - name: Check formatting
+      run: cargo fmt -- --check --verbose
+
+    - name: Run Clippy
+      run: cargo clippy --verbose
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Check out
+      uses: actions/checkout@v3
+
+    - name: Setup Rust
+      run: |
+        rustup update stable
+        rustup default stable
+        rustup component add clippy rustfmt
+    - name: Get version
+      run: cargo --version --verbose
+
+    - name: Generate lockfile
+      run: cargo generate-lockfile --verbose
+
+    - uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo
+
+    - name: Run tests
+      run: cargo test --verbose
