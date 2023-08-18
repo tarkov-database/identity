@@ -63,6 +63,7 @@ mod tests {
     #[tokio::test]
     async fn hibp_password_check() {
         let hibp = HibpClient::default();
-        hibp.check_password(PWNED_PASSWORD).await.unwrap_err();
+        let count = hibp.check_password(PWNED_PASSWORD).await.unwrap().unwrap();
+        assert!(count > 0);
     }
 }
