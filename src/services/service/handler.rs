@@ -1,7 +1,7 @@
 use crate::{
     auth::AuthError,
     database::Collection,
-    services::model::{List, ListOptions, Response, Status},
+    services::model::{helper::deserialize_vec_from_str, List, ListOptions, Response, Status},
     services::{
         error::QueryError,
         extract::{Json, Query, TokenData},
@@ -54,6 +54,12 @@ impl From<ServiceDocument> for ServiceResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Filter {
+    #[serde(
+        default,
+        skip_serializing,
+        deserialize_with = "deserialize_vec_from_str"
+    )]
+    id: Vec<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -62,7 +68,12 @@ pub struct Filter {
 
 impl From<Filter> for bson::Document {
     fn from(v: Filter) -> Self {
-        bson::to_document(&v).unwrap()
+        let mut doc = bson::to_document(&v).unwrap();
+        if !v.id.is_empty() {
+            doc.insert("_id", doc! { "$in": v.id });
+        }
+
+        doc
     }
 }
 
