@@ -1,6 +1,6 @@
 use crate::AppState;
 
-use super::{action, client, oauth, service, session, sso, token, user, health};
+use super::{action, client, health, oauth, service, session, sso, token, user};
 
 use axum::Router;
 
