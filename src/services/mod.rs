@@ -10,6 +10,7 @@ pub mod session;
 pub mod sso;
 pub mod token;
 pub mod user;
+pub mod health;
 
 pub use routes::routes;
 

@@ -1,11 +1,11 @@
-use std::borrow::Borrow;
-
 use crate::{state::AppState, Result};
+
+use std::{borrow::Borrow, time::Duration};
 
 use axum::extract::FromRef;
 use futures::TryStreamExt;
 use mongodb::{
-    bson::{Bson, Document},
+    bson::{self, Bson, Document},
     options::{
         AggregateOptions, ClientOptions, DeleteOptions, FindOneAndUpdateOptions, FindOneOptions,
         FindOptions, InsertManyOptions, InsertOneOptions, UpdateOptions,
@@ -37,6 +37,24 @@ impl Database {
             inner: db.collection::<T>(T::COLLECTION_NAME),
             db,
         }
+    }
+
+    pub async fn ping(&self) -> Result<Duration> {
+        let start = tokio::time::Instant::now();
+
+        self.client
+            .database(&self.db_name)
+            .run_command(
+                bson::doc! {
+                    "ping": 1
+                },
+                None,
+            )
+            .await?;
+
+        let end = tokio::time::Instant::now();
+
+        Ok(end - start)
     }
 }
 

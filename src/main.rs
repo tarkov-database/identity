@@ -3,6 +3,7 @@ mod config;
 mod crypto;
 mod database;
 mod error;
+mod health;
 mod http;
 mod mail;
 mod services;

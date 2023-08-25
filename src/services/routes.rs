@@ -1,6 +1,6 @@
 use crate::AppState;
 
-use super::{action, client, oauth, service, session, sso, token, user};
+use super::{action, client, oauth, service, session, sso, token, user, health};
 
 use axum::Router;
 
@@ -15,5 +15,6 @@ pub fn routes(state: AppState) -> Router<()> {
         .nest("/oauth", oauth::routes())
         .nest("/sso", sso::routes())
         .nest("/action", action::routes())
+        .nest("/health", health::routes())
         .with_state(state)
 }

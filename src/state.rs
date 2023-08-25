@@ -6,11 +6,14 @@ use crate::{
     config::{AppConfig, GlobalConfig},
     crypto::cert::CertificateStore,
     database::Database,
+    health::{HealthMonitor, SharedStatus},
     http::HttpClient,
     mail::Client as MailClient,
     services::sso::GitHub,
     utils,
 };
+
+use std::time::Duration;
 
 use mongodb::options::{ClientOptions, Tls, TlsOptions};
 use pki_rs::certificate::Certificate;
@@ -26,6 +29,7 @@ pub struct AppState {
     pub mail_client: MailClient,
     pub github_client: GitHub,
     pub global_config: GlobalConfig,
+    pub health: SharedStatus,
 }
 
 impl AppState {
@@ -89,6 +93,16 @@ impl AppState {
             editor_mail_addrs: config.editor_mail_address,
         };
 
+        let health = HealthMonitor::new(
+            Duration::from_secs(config.health_interval),
+            database.clone(),
+            Duration::from_millis(config.health_latency_treshold),
+        );
+
+        let health_status = health.status_ref();
+
+        tokio::spawn(health.watch());
+
         Ok(Self {
             mail_client,
             database,
@@ -98,6 +112,7 @@ impl AppState {
             token_verifier,
             github_client: sso_github,
             global_config,
+            health: health_status,
         })
     }
 }

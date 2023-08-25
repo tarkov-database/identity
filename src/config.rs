@@ -21,6 +21,14 @@ const fn default_hibp_check() -> bool {
     true
 }
 
+const fn default_health_interval() -> u64 {
+    30
+}
+
+const fn default_health_latency_treshold() -> u64 {
+    100
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     // HTTP server
@@ -59,6 +67,12 @@ pub struct AppConfig {
 
     // Crypto
     pub crypto_key: String,
+
+    // Health
+    #[serde(default = "default_health_interval")]
+    pub health_interval: u64,
+    #[serde(default = "default_health_latency_treshold")]
+    pub health_latency_treshold: u64,
 
     // Global vars
     pub editor_mail_address: Vec<String>,
