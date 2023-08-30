@@ -136,7 +136,9 @@ pub async fn verify_email(
         if user.verified {
             return Err(ActionError::AlreadyVerified)?;
         } else {
-            users.update(claims.sub, doc! { "verified": true }).await?;
+            users
+                .update(claims.sub, doc! { "verified": true, "canLogin": true })
+                .await?;
         }
     } else {
         users
