@@ -16,7 +16,13 @@ pub fn routes(config: RouteConfig) -> axum::Router<AppState> {
                     config
                         .cors
                         .clone()
-                        .allow_methods([Method::POST, Method::OPTIONS]),
+                        .allow_methods([Method::POST, Method::OPTIONS])
+                        .allow_headers([
+                            header::AUTHORIZATION,
+                            header::CONTENT_TYPE,
+                            header::ACCEPT,
+                            header::CONTENT_LENGTH,
+                        ]),
                 ),
         )
         .route(
