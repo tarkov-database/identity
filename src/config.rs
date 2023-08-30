@@ -81,7 +81,7 @@ pub struct AppConfig {
     #[serde(default = "default_hibp_check")]
     pub hibp_check: bool,
 
-    #[serde(deserialize_with = "deserialize_vec_from_string")]
+    #[serde(default, deserialize_with = "deserialize_vec_from_string")]
     pub cors_allowed_origins: Vec<HeaderValue>,
 }
 
