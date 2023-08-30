@@ -15,6 +15,8 @@ use crate::{
 
 use super::{model::ServiceDocument, ServiceError};
 
+use std::iter::once;
+
 use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
@@ -84,7 +86,7 @@ pub async fn list(
     Query(opts): Query<ListOptions>,
     State(services): State<Collection<ServiceDocument>>,
 ) -> ServiceResult<Response<List<ServiceResponse>>> {
-    if !claims.scope.contains(&Scope::ServiceRead) {
+    if !claims.contains_scopes(once(&Scope::ServiceRead)) {
         return Err(AuthError::InsufficientPermission)?;
     }
 
@@ -101,7 +103,7 @@ pub async fn get_by_id(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(services): State<Collection<ServiceDocument>>,
 ) -> ServiceResult<Response<ServiceResponse>> {
-    if !claims.scope.contains(&Scope::ServiceRead) {
+    if !claims.contains_scopes(once(&Scope::ServiceRead)) {
         return Err(AuthError::InsufficientPermission)?;
     }
 
@@ -124,7 +126,7 @@ pub async fn create(
     State(services): State<Collection<ServiceDocument>>,
     Json(body): Json<CreateRequest>,
 ) -> ServiceResult<Response<ServiceResponse>> {
-    if !claims.scope.contains(&Scope::ServiceWrite) {
+    if !claims.contains_scopes(once(&Scope::ServiceWrite)) {
         return Err(AuthError::InsufficientPermission)?;
     }
 
@@ -158,7 +160,7 @@ pub async fn update(
     State(services): State<Collection<ServiceDocument>>,
     Json(body): Json<UpdateRequest>,
 ) -> ServiceResult<Response<ServiceResponse>> {
-    if !claims.scope.contains(&Scope::ServiceWrite) {
+    if !claims.contains_scopes(once(&Scope::ServiceWrite)) {
         return Err(AuthError::InsufficientPermission)?;
     }
 
@@ -205,7 +207,7 @@ pub async fn delete(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(services): State<Collection<ServiceDocument>>,
 ) -> ServiceResult<Status> {
-    if !claims.scope.contains(&Scope::ServiceWrite) {
+    if !claims.contains_scopes(once(&Scope::ServiceWrite)) {
         return Err(AuthError::InsufficientPermission)?;
     }
 

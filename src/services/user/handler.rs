@@ -23,6 +23,8 @@ use super::{
     UserError,
 };
 
+use std::iter::once;
+
 use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use hyper::StatusCode;
@@ -115,7 +117,7 @@ pub async fn list(
     Query(opts): Query<ListOptions>,
     State(users): State<Collection<UserDocument>>,
 ) -> ServiceResult<Response<List<UserResponse>>> {
-    let filter = if !claims.scope.contains(&Scope::UserRead) {
+    let filter = if !claims.contains_scopes(once(&Scope::UserRead)) {
         doc! { "_id": claims.sub }
     } else {
         filter.into()
@@ -133,7 +135,7 @@ pub async fn get_by_id(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(users): State<Collection<UserDocument>>,
 ) -> ServiceResult<Response<UserResponse>> {
-    if !claims.scope.contains(&Scope::UserRead) && claims.sub != id {
+    if !claims.contains_scopes(once(&Scope::UserRead)) && claims.sub != id {
         return Err(AuthError::InsufficientPermission)?;
     }
 
@@ -172,7 +174,7 @@ pub async fn create(
     State(users): State<Collection<UserDocument>>,
     Json(body): Json<CreateRequest>,
 ) -> ServiceResult<Response<UserResponse>> {
-    if !claims.scope.contains(&Scope::UserWrite) {
+    if !claims.contains_scopes(once(&Scope::UserWrite)) {
         return Err(AuthError::InsufficientPermission)?;
     }
 
@@ -227,7 +229,7 @@ pub async fn update(
     State(users): State<Collection<UserDocument>>,
     Json(body): Json<UpdateRequest>,
 ) -> ServiceResult<Response<UserResponse>> {
-    if !claims.scope.contains(&Scope::UserWrite) && claims.sub != id {
+    if !claims.contains_scopes(once(&Scope::UserWrite)) && claims.sub != id {
         return Err(AuthError::InsufficientPermission)?;
     }
 
@@ -238,7 +240,7 @@ pub async fn update(
         doc.insert("password", hash);
     }
 
-    if claims.scope.contains(&Scope::UserWrite) {
+    if !claims.contains_scopes(once(&Scope::UserWrite)) {
         if let Some(v) = body.email {
             if users.get_by_email(&v).await.is_ok() {
                 return Err(UserError::AlreadyExists)?;
@@ -266,7 +268,7 @@ pub async fn delete(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(users): State<Collection<UserDocument>>,
 ) -> ServiceResult<Status> {
-    if !claims.scope.contains(&Scope::UserWrite) {
+    if !claims.contains_scopes(once(&Scope::UserWrite)) {
         return Err(AuthError::InsufficientPermission)?;
     }
 
