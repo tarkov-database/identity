@@ -131,8 +131,8 @@ impl Scope {
             .collect::<Vec<Vec<Scope>>>()
             .concat::<Scope>();
 
-        scope.dedup();
         scope.sort_unstable();
+        scope.dedup();
 
         scope
     }
