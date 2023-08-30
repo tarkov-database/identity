@@ -108,6 +108,7 @@ impl TokenValidation for AccessClaims<Scope> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Scope {
     UserRead,
     UserWrite,
