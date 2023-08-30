@@ -29,8 +29,10 @@ use hyper::{
     server::conn::AddrIncoming,
 };
 use hyper_rustls::server::TlsAcceptor;
+use services::routes::RouteConfig;
 use tower::ServiceBuilder;
 use tower_http::{
+    cors::CorsLayer,
     sensitive_headers::SetSensitiveHeadersLayer,
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     LatencyUnit,
@@ -122,7 +124,11 @@ async fn main() -> Result<()> {
                 ),
         );
 
-    let svc_routes: Router<()> = services::routes(state);
+    let route_config = RouteConfig {
+        cors: CorsLayer::new().allow_origin(app_config.cors_allowed_origins),
+    };
+
+    let svc_routes: Router<()> = services::routes(state, route_config);
 
     let routes = Router::new()
         .nest("/v1", svc_routes)
@@ -141,7 +147,7 @@ async fn main() -> Result<()> {
         let certs = {
             let path = app_config
                 .server_tls_cert
-                .ok_or(Error::MissingConfigVariable("IDENTITY_SERVER_TLS_CERT"))?;
+                .ok_or(Error::MissingConfigVar("IDENTITY_SERVER_TLS_CERT"))?;
             utils::pem::read_certs(&read(path)?[..])?
                 .into_iter()
                 .map(rustls::Certificate)
@@ -150,7 +156,7 @@ async fn main() -> Result<()> {
         let key = {
             let path = app_config
                 .server_tls_key
-                .ok_or(Error::MissingConfigVariable("IDENTITY_SERVER_TLS_KEY"))?;
+                .ok_or(Error::MissingConfigVar("IDENTITY_SERVER_TLS_KEY"))?;
             utils::pem::read_key(&read(path)?[..]).map(rustls::PrivateKey)?
         };
 

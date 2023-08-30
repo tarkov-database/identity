@@ -1,7 +1,7 @@
 use crate::{
     auth::AuthError,
     database::Collection,
-    services::model::{helper::deserialize_vec_from_str, List, ListOptions, Response, Status},
+    services::model::{List, ListOptions, Response, Status},
     services::{
         error::QueryError,
         extract::{Json, Query, TokenData},
@@ -10,6 +10,7 @@ use crate::{
         token::{AccessClaims, Scope},
         ServiceResult,
     },
+    utils::serde::deserialize_vec_from_str,
 };
 
 use super::{model::ServiceDocument, ServiceError};

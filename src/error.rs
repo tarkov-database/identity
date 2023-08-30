@@ -27,7 +27,7 @@ pub enum Error {
     TlsConfig(#[from] rustls::Error),
 
     #[error("missing config variable: {0}")]
-    MissingConfigVariable(&'static str),
+    MissingConfigVar(&'static str),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

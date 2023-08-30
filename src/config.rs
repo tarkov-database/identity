@@ -1,4 +1,4 @@
-use crate::{mail, state::AppState};
+use crate::{mail, state::AppState, utils::serde::deserialize_vec_from_string};
 
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -6,6 +6,7 @@ use std::{
 };
 
 use axum::extract::FromRef;
+use http::HeaderValue;
 use reqwest::Url;
 use serde::Deserialize;
 
@@ -79,6 +80,9 @@ pub struct AppConfig {
     pub allowed_domains: Vec<String>,
     #[serde(default = "default_hibp_check")]
     pub hibp_check: bool,
+
+    #[serde(deserialize_with = "deserialize_vec_from_string")]
+    pub cors_allowed_origins: Vec<HeaderValue>,
 }
 
 #[derive(Debug, Clone)]

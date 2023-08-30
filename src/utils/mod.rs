@@ -1,4 +1,5 @@
 pub mod pem;
+pub mod serde;
 pub mod validation;
 
 use tokio::{
