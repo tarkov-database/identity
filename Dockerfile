@@ -1,4 +1,4 @@
-FROM rust:1.72-bullseye as builder
+FROM rust:1.72-bookworm as builder
 
 ENV PKG_CONFIG_ALLOW_CROSS=1
 ENV RUSTFLAGS="-Ctarget-cpu=x86-64 -Ctarget-feature=+sse,+sse2,+sse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+aes,+sha"
@@ -7,7 +7,7 @@ WORKDIR /usr/src/identity
 COPY . .
 RUN cargo install --path .
 
-FROM gcr.io/distroless/cc-debian11
+FROM gcr.io/distroless/cc-debian12
 
 LABEL homepage="https://tarkov-database.com"
 LABEL repository="https://github.com/tarkov-database/identity"
