@@ -90,7 +90,7 @@ impl TryFrom<String> for ClientName {
         let re = {
             static RE: OnceLock<Regex> = OnceLock::new();
             RE.get_or_init(|| {
-                Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9\-_\#\*\+\(\)\\&\s]*[a-zA-Z0-9]$").unwrap()
+                Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9\-_\/\#\*\+\(\)\\&\s]*[a-zA-Z0-9]$").unwrap()
             })
         };
 
