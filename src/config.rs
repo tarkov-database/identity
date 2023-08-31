@@ -30,6 +30,10 @@ const fn default_health_latency_treshold() -> u64 {
     100
 }
 
+const fn default_cors_max_age() -> u64 {
+    1800
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     // HTTP server
@@ -81,8 +85,11 @@ pub struct AppConfig {
     #[serde(default = "default_hibp_check")]
     pub hibp_check: bool,
 
+    // CORS
     #[serde(default, deserialize_with = "deserialize_vec_from_string")]
     pub cors_allowed_origins: Vec<HeaderValue>,
+    #[serde(default = "default_cors_max_age")]
+    pub cors_max_age: u64,
 }
 
 #[derive(Debug, Clone)]

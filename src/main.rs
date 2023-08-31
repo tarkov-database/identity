@@ -125,7 +125,9 @@ async fn main() -> Result<()> {
         );
 
     let route_config = RouteConfig {
-        cors: CorsLayer::new().allow_origin(app_config.cors_allowed_origins),
+        cors: CorsLayer::new()
+            .allow_origin(app_config.cors_allowed_origins)
+            .max_age(Duration::from_secs(app_config.cors_max_age)),
     };
 
     let svc_routes: Router<()> = services::routes(state, route_config);
