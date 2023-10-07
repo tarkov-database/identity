@@ -81,6 +81,7 @@ pub async fn register(
         locked: false,
         connections: Default::default(),
         sessions: Default::default(),
+        tags: Default::default(),
         last_modified: Utc::now(),
         created: Utc::now(),
     };

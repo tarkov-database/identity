@@ -19,11 +19,11 @@ use crate::{
 };
 
 use super::{
-    model::{Connection, Role, SessionDocument, UserDocument},
+    model::{Connection, Role, SessionDocument, Tag, UserDocument},
     UserError,
 };
 
-use std::iter::once;
+use std::{collections::HashSet, iter::once};
 
 use axum::extract::{Path, State};
 use chrono::{serde::ts_seconds, DateTime, Utc};
@@ -47,6 +47,7 @@ pub struct UserResponse {
     pub locked: bool,
     pub connections: Vec<Connection>,
     pub sessions: Vec<SessionResponse>,
+    pub tags: HashSet<Tag>,
     #[serde(with = "ts_seconds")]
     pub last_modified: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
@@ -68,6 +69,7 @@ impl From<UserDocument> for UserResponse {
                 .into_iter()
                 .map(SessionResponse::from)
                 .collect(),
+            tags: doc.tags,
             last_modified: doc.last_modified,
             created: doc.created,
         }
@@ -197,6 +199,7 @@ pub async fn create(
         can_login: false,
         verified: false,
         locked: false,
+        tags: Default::default(),
         connections: Default::default(),
         sessions: Default::default(),
         last_modified: Utc::now(),
@@ -216,6 +219,7 @@ pub struct UpdateRequest {
     email: Option<EmailAddr>,
     password: Option<String>,
     roles: Option<Vec<Role>>,
+    tags: Option<HashSet<Tag>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -240,7 +244,7 @@ pub async fn update(
         doc.insert("password", hash);
     }
 
-    if !claims.contains_scopes(once(&Scope::UserWrite)) {
+    if claims.contains_scopes(once(&Scope::UserWrite)) {
         if let Some(v) = body.email {
             if users.get_by_email(&v).await.is_ok() {
                 return Err(UserError::AlreadyExists)?;
@@ -251,6 +255,9 @@ pub async fn update(
         }
         if let Some(v) = body.roles {
             doc.insert("roles", to_bson(&v).unwrap());
+        }
+        if let Some(v) = body.tags {
+            doc.insert("tags", to_bson(&v).unwrap());
         }
     }
 

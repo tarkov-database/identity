@@ -1,11 +1,11 @@
-use std::collections::VecDeque;
-
 use crate::{
     database::{Collection, DatabaseModel},
     services::{model::EmailAddr, ServiceResult},
 };
 
 use super::UserError;
+
+use std::collections::{HashSet, VecDeque};
 
 use chrono::{DateTime, Utc};
 use mongodb::{
@@ -41,6 +41,7 @@ pub struct UserDocument {
     pub locked: bool,
     pub connections: Vec<Connection>,
     pub sessions: Vec<SessionDocument>,
+    pub tags: HashSet<Tag>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub last_modified: DateTime<Utc>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
@@ -108,6 +109,25 @@ impl Connection {
     /// [`GitHub`]: Connection::GitHub
     pub fn is_github(&self) -> bool {
         matches!(self, Self::GitHub { .. })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Tag {
+    pub value: String,
+}
+
+impl PartialEq for Tag {
+    fn eq(&self, other: &Self) -> bool {
+        self.value.eq(&other.value)
+    }
+}
+
+impl Eq for Tag {}
+
+impl std::hash::Hash for Tag {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state)
     }
 }
 

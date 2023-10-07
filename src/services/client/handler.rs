@@ -8,6 +8,8 @@ use crate::{
     services::{
         error::QueryError,
         extract::{Json, Query, TokenData},
+        service::{model::Requirement, ServiceError},
+        user::model::UserDocument,
     },
     services::{
         model::{List, ListOptions, Response, Status},
@@ -154,11 +156,12 @@ pub struct CreateRequest {
     user: Option<ObjectId>,
     name: ClientName,
     service: ObjectId,
-    scope: Option<Vec<String>>,
+    scope: Vec<String>,
 }
 
 pub async fn create(
     TokenData(claims): TokenData<AccessClaims<Scope>>,
+    State(user): State<Collection<UserDocument>>,
     State(clients): State<Collection<ClientDocument>>,
     State(services): State<Collection<ServiceDocument>>,
     Json(body): Json<CreateRequest>,
@@ -177,14 +180,38 @@ pub async fn create(
 
     let service = services.get_by_id(body.service).await?;
 
+    let scope = body
+        .scope
+        .iter()
+        .map(|scope| {
+            service
+                .scope
+                .iter()
+                .find(|s| &s.value == scope)
+                .ok_or(ServiceError::UndefinedScope)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let user = user.get_by_id(user_id).await?;
+
+    scope.iter().try_for_each(|scope| {
+        scope.requirements.iter().try_for_each(|req| match req {
+            Requirement::Tag { tags } => tags
+                .iter()
+                .all(|tag| user.tags.iter().any(|t| t == tag))
+                .then_some(())
+                .ok_or(ServiceError::RequirementNotMet),
+        })
+    })?;
+
     let client = ClientDocument {
         id: ObjectId::new(),
         user: user_id,
         name: body.name,
         service: service.id,
-        scope: service.scope_default,
         locked: false,
         oauth: None,
+        scope: body.scope,
         last_modified: Utc::now(),
         created: Utc::now(),
     };
@@ -207,6 +234,8 @@ pub async fn update(
     Path(id): Path<ObjectId>,
     TokenData(claims): TokenData<AccessClaims<Scope>>,
     State(clients): State<Collection<ClientDocument>>,
+    State(services): State<Collection<ServiceDocument>>,
+    State(user): State<Collection<UserDocument>>,
     Json(body): Json<UpdateRequest>,
 ) -> ServiceResult<Response<ClientResponse>> {
     if !claims.contains_scopes(once(&Scope::ClientWrite)) {
@@ -230,6 +259,31 @@ pub async fn update(
         doc.insert("name", v.as_str());
     }
     if let Some(v) = body.scope {
+        let client = clients.get_by_id(id).await?;
+        let service = services.get_by_id(client.service).await?;
+        let scope = v
+            .iter()
+            .map(|scope| {
+                service
+                    .scope
+                    .iter()
+                    .find(|s| &s.value == scope)
+                    .ok_or(ServiceError::UndefinedScope)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let user = user.get_by_id(client.user).await?;
+
+        scope.iter().try_for_each(|scope| {
+            scope.requirements.iter().try_for_each(|req| match req {
+                Requirement::Tag { tags } => tags
+                    .iter()
+                    .all(|tag| user.tags.iter().any(|t| t == tag))
+                    .then_some(())
+                    .ok_or(ServiceError::RequirementNotMet),
+            })
+        })?;
+
         doc.insert("scope", v);
     }
     if doc.is_empty() {

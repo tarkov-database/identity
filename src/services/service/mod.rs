@@ -2,7 +2,7 @@ mod handler;
 pub mod model;
 mod routes;
 
-use crate::{error, services::model::Status};
+use crate::services::model::Status;
 
 use super::error::ErrorResponse;
 
@@ -18,6 +18,8 @@ pub enum ServiceError {
     InvalidId,
     #[error("scope is not defined")]
     UndefinedScope,
+    #[error("requirement is not met")]
+    RequirementNotMet,
 }
 
 impl ErrorResponse for ServiceError {
@@ -27,6 +29,7 @@ impl ErrorResponse for ServiceError {
         match self {
             ServiceError::NotFound => StatusCode::NOT_FOUND,
             ServiceError::InvalidId | ServiceError::UndefinedScope => StatusCode::BAD_REQUEST,
+            ServiceError::RequirementNotMet => StatusCode::FORBIDDEN,
         }
     }
 

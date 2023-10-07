@@ -382,6 +382,7 @@ pub(super) async fn authorized(
                 roles: Default::default(),
                 sessions: Default::default(),
                 connections: vec![connection],
+                tags: Default::default(),
                 last_modified: Utc::now(),
                 created: Utc::now(),
             };

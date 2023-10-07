@@ -1,9 +1,11 @@
 use crate::{
     database::{Collection, DatabaseModel},
-    services::ServiceResult,
+    services::{user::model::Tag, ServiceResult},
 };
 
 use super::ServiceError;
+
+use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
 use mongodb::{
@@ -19,8 +21,7 @@ pub struct ServiceDocument {
     pub id: ObjectId,
     pub name: String,
     pub audience: Vec<String>,
-    pub scope: Vec<String>,
-    pub scope_default: Vec<String>,
+    pub scope: Vec<Scope<String>>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub last_modified: DateTime<Utc>,
     #[serde(with = "chrono_datetime_as_bson_datetime")]
@@ -29,6 +30,19 @@ pub struct ServiceDocument {
 
 impl DatabaseModel for ServiceDocument {
     const COLLECTION_NAME: &'static str = "services";
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Scope<T> {
+    pub value: T,
+    pub requirements: Vec<Requirement>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum Requirement {
+    Tag { tags: HashSet<Tag> },
 }
 
 impl Collection<ServiceDocument> {

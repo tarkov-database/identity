@@ -13,7 +13,7 @@ use crate::{
     utils::serde::deserialize_vec_from_str,
 };
 
-use super::{model::ServiceDocument, ServiceError};
+use super::model::{Scope as ScopeProps, ServiceDocument};
 
 use std::iter::once;
 
@@ -32,8 +32,7 @@ pub struct ServiceResponse {
     pub id: ObjectId,
     pub name: String,
     pub audience: Vec<String>,
-    pub scope: Vec<String>,
-    pub scope_default: Vec<String>,
+    pub scope: Vec<ScopeProps<String>>,
     #[serde(with = "ts_seconds")]
     pub last_modified: DateTime<Utc>,
     #[serde(with = "ts_seconds")]
@@ -47,7 +46,6 @@ impl From<ServiceDocument> for ServiceResponse {
             name: doc.name,
             audience: doc.audience,
             scope: doc.scope,
-            scope_default: doc.scope_default,
             last_modified: doc.last_modified,
             created: doc.created,
         }
@@ -117,8 +115,7 @@ pub async fn get_by_id(
 pub struct CreateRequest {
     name: String,
     audience: Vec<String>,
-    scope: Vec<String>,
-    scope_default: Vec<String>,
+    scope: Vec<ScopeProps<String>>,
 }
 
 pub async fn create(
@@ -135,7 +132,6 @@ pub async fn create(
         name: body.name,
         audience: body.audience,
         scope: body.scope,
-        scope_default: body.scope_default,
         last_modified: Utc::now(),
         created: Utc::now(),
     };
@@ -150,8 +146,7 @@ pub async fn create(
 pub struct UpdateRequest {
     name: Option<String>,
     audience: Option<String>,
-    scope: Option<Vec<String>>,
-    scope_default: Option<Vec<String>>,
+    scope: Option<Vec<ScopeProps<String>>>,
 }
 
 pub async fn update(
@@ -164,22 +159,6 @@ pub async fn update(
         return Err(AuthError::InsufficientPermission)?;
     }
 
-    let svc = services.get_by_id(id).await?;
-
-    if let Some(ref def) = body.scope_default {
-        if let Some(ref scope) = body.scope {
-            if !def.iter().all(|s| scope.contains(s)) {
-                return Err(ServiceError::UndefinedScope)?;
-            }
-        } else if !def.iter().all(|s| svc.scope.contains(s)) {
-            return Err(ServiceError::UndefinedScope)?;
-        }
-    } else if let Some(ref scope) = body.scope {
-        if svc.scope_default.iter().all(|s| scope.contains(s)) {
-            return Err(ServiceError::UndefinedScope)?;
-        }
-    }
-
     let mut doc = Document::new();
     if let Some(v) = body.name {
         doc.insert("name", v);
@@ -188,10 +167,7 @@ pub async fn update(
         doc.insert("audience", v);
     }
     if let Some(v) = body.scope {
-        doc.insert("scope", v);
-    }
-    if let Some(v) = body.scope_default {
-        doc.insert("scopeDefault", v);
+        doc.insert("scope", bson::to_bson(&v).unwrap());
     }
     if doc.is_empty() {
         return Err(QueryError::InvalidBody)?;
