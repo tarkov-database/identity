@@ -26,7 +26,7 @@ futures = { version = "0.3", default-features = false, features = [
   "async-await",
 ] }
 hyper = { version = "0.14", features = ["http1", "http2", "server", "runtime"] }
-hyper-rustls = { git = "https://github.com/morphy2k/hyper-rustls.git", rev = "5ccdb23", features = [
+hyper-rustls = { git = "https://github.com/morphy2k/hyper-rustls.git", rev = "e20c280", features = [
   "server",
   "http1",
   "http2",
@@ -103,11 +103,11 @@ aes-gcm-siv = { version = "0.11", features = [
   # "arrayvec",
 ], default-features = false }
 zeroize = { version = "1.6", features = ["std"] }
-pki-rs = { git = "https://github.com/morphy2k/pki-rs", tag = "v0.1.0-alpha.1", features = [
+pki-rs = { git = "https://github.com/morphy2k/pki-rs", tag = "v0.1.0-alpha.2", features = [
   "ed25519",
   "fingerprint",
 ], default-features = false }
-jsonwebtoken = { version = "8.3", default-features = false }
+jsonwebtoken = { version = "9.1", default-features = false }
 rustls-pemfile = "1"
 
 [profile.release]
